@@ -18,6 +18,11 @@ interface PendingHandoff {
 }
 
 const pending = new Map<string, PendingHandoff>();
+// Requests with an exchange in flight. The same callback can arrive twice
+// (the browser's "Open Hasht?" prompt plus the approve page's "Return to the
+// app" button), and the server redeems a code once — the second exchange would
+// fail and show an error after the first had already signed the user in.
+const redeeming = new Set<string>();
 
 export interface AuthResult {
   serverId: string;
@@ -96,8 +101,21 @@ export async function completeBrowserSignIn(
   if (!requestId || !code) return null;
 
   const handoff = pending.get(requestId);
-  if (!handoff) return null;
+  if (!handoff || redeeming.has(requestId)) return null;
 
+  redeeming.add(requestId);
+  try {
+    return await redeem(requestId, code, handoff);
+  } finally {
+    redeeming.delete(requestId);
+  }
+}
+
+async function redeem(
+  requestId: string,
+  code: string,
+  handoff: PendingHandoff,
+): Promise<AuthResult> {
   const res = await net.fetch(
     new URL("/api/auth/native/exchange", handoff.serverUrl).toString(),
     {
