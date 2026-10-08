@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor } from "electron";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
   addServer,
@@ -9,6 +10,7 @@ import {
   removeServer,
   renameServer,
   setActiveServer,
+  type ServerEntry,
 } from "./serverStore";
 import { buildAppMenu } from "./appMenu";
 import {
@@ -26,6 +28,7 @@ import {
   beginBrowserSignIn,
   completeBrowserSignIn,
   deepLinkFromArgv,
+  signInLinkOrigin,
 } from "./nativeAuth";
 import { getServerWindow } from "./windows";
 import { initAutoUpdater, checkForUpdatesFromMenu } from "./updater";
@@ -73,14 +76,31 @@ app.on("open-url", (event, url) => {
 // own storage keys.
 const pendingAuth = new Map<string, unknown>();
 
+// Servers named by a `hasht://signin` link that aren't in the list yet. Added
+// only once sign-in succeeds, so a link the user backs out of leaves nothing.
+const provisionalServers = new Map<string, ServerEntry>();
+
 async function handleDeepLink(link: string): Promise<void> {
   try {
+    // open-url can fire before ready on a cold start.
+    await app.whenReady();
+    const origin = signInLinkOrigin(link);
+    if (origin) return await signInFromLink(origin);
+
     const result = await completeBrowserSignIn(link);
     if (!result) return;
-    pendingAuth.set(result.serverId, result.auth);
 
-    const entry = listServers().find((s) => s.id === result.serverId);
+    let entry = listServers().find((s) => s.id === result.serverId);
+    const provisional = provisionalServers.get(result.serverId);
+    if (!entry && provisional) {
+      provisionalServers.delete(result.serverId);
+      entry = addServer(provisional.url, provisional.name);
+      closePickerWindow();
+      refreshMenus();
+    }
     if (!entry) return;
+    pendingAuth.set(entry.id, result.auth);
+
     const win = openServerWindow(entry);
     win.webContents.reload();
     if (win.isMinimized()) win.restore();
@@ -88,6 +108,47 @@ async function handleDeepLink(link: string): Promise<void> {
     win.focus();
   } catch (err) {
     dialog.showErrorBox("Sign-in failed", (err as Error).message);
+  }
+}
+
+/**
+ * "Sign in to the App" in a browser's settings: runs the usual browser handoff
+ * for that server. The link can come from any page naming any host, so the
+ * dialog is the user's say-so, and doubles as the place the match code is
+ * shown since no app screen started this.
+ */
+async function signInFromLink(origin: string): Promise<void> {
+  const host = new URL(origin).host;
+  const existing = listServers().find((s) => new URL(s.url).origin === origin);
+  const entry = existing ?? {
+    id: randomUUID(),
+    url: normalizeUrl(origin),
+    name: (await fetchInstanceName(origin)) ?? host,
+  };
+  if (!existing) provisionalServers.set(entry.id, entry);
+
+  await beginBrowserSignIn(entry, async (code) => {
+    const { response } = await dialog.showMessageBox({
+      type: "question",
+      buttons: ["Continue", "Cancel"],
+      defaultId: 0,
+      cancelId: 1,
+      message: `Sign in to ${host}?`,
+      detail: `Your browser will show a code. Only approve if it matches:\n\n${code.replace(/(.{4})(?=.)/g, "$1 ")}`,
+    });
+    if (response !== 0) provisionalServers.delete(entry.id);
+    return response === 0;
+  });
+}
+
+/** Best-effort: a server whose name can't be read is still fine to add. */
+async function fetchInstanceName(origin: string): Promise<string | null> {
+  try {
+    const res = await net.fetch(new URL("/api/instance-settings", origin).toString());
+    const name = res.ok ? ((await res.json()) as { app_name?: unknown }).app_name : null;
+    return typeof name === "string" && name ? name : null;
+  } catch {
+    return null;
   }
 }
 
@@ -148,6 +209,10 @@ app.whenReady().then(() => {
   } else {
     openPickerWindow();
   }
+
+  // Windows and Linux hand a cold-start deep link to this instance as argv.
+  const startupLink = deepLinkFromArgv(process.argv);
+  if (startupLink) void handleDeepLink(startupLink);
 
   ipcMain.handle("picker:list-servers", () => listServers());
 
