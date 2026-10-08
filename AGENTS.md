@@ -23,6 +23,9 @@ train to keep in sync. Mirrors Mattermost Desktop / Rocket.Chat Desktop.
   `serverPreload.ts`); Windows/Linux use the normal in-page passkey flow.
   `native-auth:start` returns the match code, which the server page shows the
   user to check against the browser's.
+  `hasht://signin?server=<origin>` (the web app's "Sign in to the App") runs the
+  same flow from a browser: a dialog shows the host and match code first, https
+  origins only, and a new server is added only once sign-in succeeds.
 - `src/main/updater.ts` — `electron-updater` wiring against the GitHub
   releases feed configured in `electron-builder.yml`'s `publish:` block.
 - `src/main/screenShare.ts` — display-media handler (Electron refuses
