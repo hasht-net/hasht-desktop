@@ -122,7 +122,8 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
   // (e.g. a link-preview target, an external link in a message) opens in
   // the OS default browser instead of becoming a second app window.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isSameOrigin(url, entry.url)) {
+    // /api/ URLs (attachments, image originals) are files, not app pages.
+    if (isSameOrigin(url, entry.url) && !isApiPath(url)) {
       return { action: "allow" };
     }
     openExternal(url);
@@ -263,6 +264,14 @@ function restorableBounds(id: string): Electron.Rectangle | undefined {
 
 function rectanglesOverlap(a: Electron.Rectangle, b: Electron.Rectangle): boolean {
   return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+function isApiPath(url: string): boolean {
+  try {
+    return new URL(url).pathname.startsWith("/api/");
+  } catch {
+    return false;
+  }
 }
 
 function isSameOrigin(url: string, serverUrl: string): boolean {
