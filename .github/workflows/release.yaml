@@ -46,7 +46,7 @@ jobs:
           # One runner per platform, each producing both architectures — the
           # arch lists in electron-builder.yml drive that, and they take
           # precedence over any --x64/--arm64 CLI flag.
-          - os: macos-14
+          - os: macos-26
             platform: mac
           - os: windows-latest
             platform: win
