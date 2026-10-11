@@ -23,6 +23,7 @@ protocols:
     schemes: [hasht]
 
 mac:
+  icon: build/hasht.icon
   category: public.app-category.social-networking
   target:
     - target: dmg
@@ -49,6 +50,9 @@ mac:
   # Notarization: set APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
   # env vars in CI; electron-builder notarizes automatically when present.
 
+dmg:
+  icon: build/icon.icns
+
 win:
   target:
     - target: nsis
@@ -60,6 +64,7 @@ win:
   # Signing) in CI — unsigned builds trigger SmartScreen warnings.
 
 linux:
+  icon: build/icon.png
   target:
     - target: AppImage
       arch: [x64, arm64]
