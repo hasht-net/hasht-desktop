@@ -66,6 +66,9 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
     minWidth: 720,
     minHeight: 480,
     title: entry.name,
+    icon: process.platform === "linux"
+      ? path.join(__dirname, "../../build/icon.png")
+      : undefined,
     // No native title bar: the page paints the whole window and reserves a
     // drag strip at the top (see TITLEBAR_HEIGHT in the preload), so the app's
     // own background runs edge to edge instead of sitting under grey chrome.
@@ -194,6 +197,9 @@ export function openPickerWindow(): BrowserWindow {
     height: 560,
     resizable: false,
     title: "Welcome to Hasht",
+    icon: process.platform === "linux"
+      ? path.join(__dirname, "../../build/icon.png")
+      : undefined,
     backgroundColor: "#131417",
     webPreferences: {
       preload: path.join(__dirname, "../preload/pickerPreload.js"),

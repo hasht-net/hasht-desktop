@@ -3,6 +3,7 @@
   "version": "0.1.1",
   "description": "Electron desktop shell for the self-hosted chat app — thin client, loads a user-configured server URL.",
   "main": "dist/main/main.js",
+  "desktopName": "hasht-desktop.desktop",
   "private": true,
   "scripts": {
     "dev": "npm run build && concurrently -k \"tsc -p tsconfig.json -w\" \"wait-on dist/main/main.js && electron dist/main/main.js\"",
