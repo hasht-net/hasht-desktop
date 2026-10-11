@@ -59,3 +59,30 @@ npm run dist:mac    # dmg + zip, x64 + arm64 (universal)
 npm run dist:win    # nsis installer, x64 + arm64
 npm run dist:linux  # AppImage + deb + rpm, x64 + arm64
 ```
+
+## Desktop launcher icons
+
+Windows and Linux use a transparent blue/purple Hasht mark in `build/icon.ico`
+and `build/icon.png`. The mark occupies approximately 90% of the canvas width,
+with a small transparent margin to preserve its silhouette. Windows includes
+15 sizes from 16 to 256 pixels for common shell and display-scale requests.
+Linux packaging uses the PNG for launcher icons and the AUR tarball resource.
+The picker and server windows also use this icon on Linux. `desktopName` and
+`linux.syncDesktopName` associate running windows with `hasht-desktop.desktop`
+so desktop environments can find the installed launcher icon.
+
+Regenerate these two assets from the committed transparent mark using Pillow
+(a maintainer tool, not an application or release-build dependency):
+
+```sh
+python3 -m venv /tmp/hasht-icon-tools
+/tmp/hasht-icon-tools/bin/python -m pip install Pillow==11.3.0
+/tmp/hasht-icon-tools/bin/python scripts/generate-desktop-icons.py
+```
+
+Microsoft recommends [transparent backgrounds and multiple native icon sizes](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction).
+This NSIS/Win32 build uses a single ICO with alpha transparency, rather than the
+theme-qualified PNG assets used by MSIX applications. Linux uses the same
+theme-neutral artwork; the [freedesktop icon specification](https://specifications.freedesktop.org/icon-theme/latest/)
+recommends PNG bitmap assets and neutral icons for the `hicolor` fallback theme.
+macOS uses its separate Icon Composer appearances and DMG ICNS asset.
