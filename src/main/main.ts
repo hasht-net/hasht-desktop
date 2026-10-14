@@ -334,6 +334,8 @@ async function resolveServerUrl(rawUrl: string): Promise<string> {
 // Unpackaged builds run through the electron binary, so the scheme has to be
 // registered against it explicitly or the OS has nothing to hand the link to.
 function registerProtocol(): void {
+  // Packaged Windows protocol registration comes from AppxManifest.xml.
+  if (process.windowsStore) return;
   if (process.defaultApp && process.argv.length >= 2) {
     app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
       path.resolve(process.argv[1]),

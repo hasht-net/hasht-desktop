@@ -1,7 +1,7 @@
 {
   "name": "hasht-desktop",
   "version": "0.1.1",
-  "description": "Electron desktop shell for the self-hosted chat app — thin client, loads a user-configured server URL.",
+  "description": "Electron desktop shell for the self-hosted chat app \u2014 thin client, loads a user-configured server URL.",
   "main": "dist/main/main.js",
   "desktopName": "hasht-desktop.desktop",
   "private": true,
@@ -12,7 +12,8 @@
     "dist": "npm run build && electron-builder",
     "dist:mac": "npm run build && electron-builder --mac",
     "dist:win": "npm run build && electron-builder --win --x64 --arm64",
-    "dist:linux": "npm run build && electron-builder --linux --x64 --arm64"
+    "dist:linux": "npm run build && electron-builder --linux --x64 --arm64",
+    "dist:store": "npm run build && electron-builder --win --x64 --arm64 --config electron-builder.store.yml --publish never"
   },
   "dependencies": {
     "electron-store": "^8.2.0",

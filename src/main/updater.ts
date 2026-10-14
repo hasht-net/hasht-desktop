@@ -16,6 +16,8 @@ const REPO = "Hasht-net/hasht-desktop";
 // The feed URL comes from electron-builder.yml's `publish` block, baked into
 // app-update.yml at package time — change the repo there, not here.
 export function initAutoUpdater(): void {
+  // Store packages must stay on the Store audience/flight assigned to them.
+  if (process.windowsStore) return;
   // macOS gets the download-and-open-the-DMG fallback (see macUpdateFlow):
   // Squirrel.Mac refuses to swap in our unsigned build, so electron-updater's
   // in-place update can't work here yet.
@@ -52,6 +54,11 @@ export function initAutoUpdater(): void {
 /** Wired to a "Check for Updates…" menu item — always gives the user feedback,
  *  including "you're up to date" and errors, unlike the silent background run. */
 export async function checkForUpdatesFromMenu(): Promise<void> {
+  if (process.windowsStore) {
+    await shell.openExternal("ms-windows-store://downloadsandupdates");
+    return;
+  }
+
   if (process.platform === "darwin") {
     await checkForMacUpdate({ manual: true });
     return;
