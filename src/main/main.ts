@@ -15,6 +15,7 @@ import {
 import { buildAppMenu } from "./appMenu";
 import {
   openServerWindow,
+  activateServerWindows,
   openPickerWindow,
   closePickerWindow,
   closeServerWindow,
@@ -53,15 +54,7 @@ app.on("second-instance", (_event, argv) => {
   const link = deepLinkFromArgv(argv);
   if (link) void handleDeepLink(link);
 
-  const active = getActiveServer();
-  if (!active) {
-    openPickerWindow();
-    return;
-  }
-  const win = openServerWindow(active);
-  if (win.isMinimized()) win.restore();
-  win.show();
-  win.focus();
+  void app.whenReady().then(() => activateServerWindows());
 });
 
 app.on("before-quit", () => setQuitting(true));
@@ -306,13 +299,8 @@ app.whenReady().then(() => {
     }
   });
 
-  // Server windows hide rather than close, so "no windows exist" is no longer
-  // the signal here — just resurface the active server.
-  app.on("activate", () => {
-    const a = getActiveServer();
-    if (a) openServerWindow(a);
-    else if (BrowserWindow.getAllWindows().length === 0) openPickerWindow();
-  });
+  // Dock activation and second-instance launches share the same window policy.
+  app.on("activate", activateServerWindows);
 });
 
 // Registering this at all suppresses Electron's default quit-on-last-window-close;

@@ -8,7 +8,7 @@ import {
 } from "electron";
 import path from "node:path";
 import type { ServerEntry } from "./serverStore";
-import { getWindowBounds, setWindowBounds } from "./serverStore";
+import { getActiveServer, getWindowBounds, setActiveServer, setWindowBounds } from "./serverStore";
 import { clearUnread } from "./tray";
 import { enableScreenShare } from "./screenShare";
 
@@ -36,6 +36,8 @@ const serverWindows = new Map<string, BrowserWindow>();
 const serverIdByWebContentsId = new Map<number, string>();
 let pickerWindow: BrowserWindow | null = null;
 let isQuitting = false;
+const focusedServerIds = new Set<string>();
+let activatingWindows = false;
 
 export function setQuitting(value: boolean): void {
   isQuitting = value;
@@ -51,6 +53,7 @@ export function serverIdForWebContents(webContentsId: number): string | undefine
 export function openServerWindow(entry: ServerEntry): BrowserWindow {
   const existing = serverWindows.get(entry.id);
   if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
     existing.show();
     existing.focus();
     return existing;
@@ -119,6 +122,13 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
   // Without this `getDisplayMedia()` is refused before any picker appears.
   enableScreenShare(serverSession);
 
+  win.on("focus", () => {
+    if (activatingWindows) return;
+    focusedServerIds.delete(entry.id);
+    focusedServerIds.add(entry.id);
+    setActiveServer(entry.id);
+  });
+
   win.loadURL(entry.url);
 
   // Everything on the server's own origin stays in-window; anything else
@@ -155,6 +165,7 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
   win.on("closed", () => {
     clearUnread(entry.id);
     serverWindows.delete(entry.id);
+    focusedServerIds.delete(entry.id);
     serverIdByWebContentsId.delete(webContentsId);
   });
 
@@ -168,6 +179,42 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
   serverWindows.set(entry.id, win);
   serverIdByWebContentsId.set(webContentsId, entry.id);
   return win;
+}
+
+// Closing hides a server window. App activation must prefer windows still
+// open, rather than resurrecting a hidden server while another is in use.
+export function activateServerWindows(): void {
+  const open = new Map([...serverWindows].filter(([, win]) =>
+    !win.isDestroyed() && (win.isVisible() || win.isMinimized()),
+  ));
+  if (open.size === 0) {
+    const active = getActiveServer();
+    if (active) openServerWindow(active);
+    else openPickerWindow();
+    return;
+  }
+
+  const recentId = [...focusedServerIds].reverse().find((id) => open.has(id));
+  const target = (recentId ? open.get(recentId) : undefined)
+    ?? open.get(getActiveServer()?.id ?? "")
+    ?? open.values().next().value!;
+
+  // Restoring a minimized window can focus it. Select the target beforehand
+  // and ignore those incidental focus events while raising the other windows.
+  activatingWindows = true;
+  try {
+    for (const win of open.values()) {
+      if (win === target) continue;
+      if (win.isMinimized()) win.restore();
+      win.showInactive();
+      win.moveTop();
+    }
+  } finally {
+    activatingWindows = false;
+  }
+  if (target.isMinimized()) target.restore();
+  target.show();
+  target.focus();
 }
 
 export function closeServerWindow(id: string): void {

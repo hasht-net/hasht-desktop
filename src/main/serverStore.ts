@@ -70,7 +70,7 @@ export function removeServer(id: string): void {
 }
 
 export function setActiveServer(id: string): void {
-  if (listServers().some((s) => s.id === id)) {
+  if (store.get("activeServerId") !== id && listServers().some((s) => s.id === id)) {
     store.set("activeServerId", id);
   }
 }
