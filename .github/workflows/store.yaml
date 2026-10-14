@@ -1,0 +1,58 @@
+name: Microsoft Store package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Store version: three integers, e.g. 0.1.1 (increase for each beta upload)'
+        required: true
+        default: '0.1.1'
+  pull_request:
+    paths:
+      - '.github/workflows/store.yaml'
+      - 'electron-builder*.yml'
+      - 'package*.json'
+      - 'src/**'
+      - 'build/**'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Set numeric Store version
+        shell: bash
+        env:
+          STORE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          node <<'JS'
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const version = process.env.STORE_VERSION || pkg.version;
+          if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version) ||
+              version.split('.').some(n => Number(n) > 65535) || version === '0.0.0') {
+            throw new Error('Store version must be three integers from 0 through 65535, greater than 0.0.0');
+          }
+          pkg.version = version;
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          JS
+      - name: Build unsigned Store packages
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist:store
+      - name: Upload packages for Partner Center
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: microsoft-store-packages
+          path: release-store/*.appx
+          if-no-files-found: error

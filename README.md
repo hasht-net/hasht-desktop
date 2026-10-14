@@ -86,3 +86,9 @@ theme-qualified PNG assets used by MSIX applications. Linux uses the same
 theme-neutral artwork; the [freedesktop icon specification](https://specifications.freedesktop.org/icon-theme/latest/)
 recommends PNG bitmap assets and neutral icons for the `hicolor` fallback theme.
 macOS uses its separate Icon Composer appearances and DMG ICNS asset.
+
+## Microsoft Store
+
+Store package builds and private beta submission are documented in
+[Microsoft Store release](docs/MICROSOFT_STORE.md). Microsoft signs Store
+packages; GitHub NSIS installers use the existing separate release workflow.
