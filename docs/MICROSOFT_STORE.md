@@ -35,6 +35,38 @@ Outputs are in `release-store/`. These unsigned uploads are intended for Partner
 Center, not public sideloading. A real Windows packaging run and Store validation
 are required; macOS TypeScript/configuration checks cannot verify those steps.
 
+## Optional automatic uploads (after first publication)
+
+Microsoft's supported CLI requires the app's first publication through Partner
+Center before automated updates. Complete the initial private beta submission
+manually; then the same build job can upload subsequent updates.
+
+Associate an Entra tenant with Partner Center. Add an Entra app registration
+under Account settings → User management → Microsoft Entra applications and give
+it the Manager role. Create a client secret and add these GitHub repository
+secrets (Settings → Secrets and variables → Actions):
+
+- `STORE_TENANT_ID`: directory/tenant ID.
+- `STORE_SELLER_ID`: Partner Center seller/publisher ID, not the Store product ID.
+- `STORE_CLIENT_ID`: app registration application/client ID.
+- `STORE_CLIENT_SECRET`: client secret **value**, not its ID. Rotate before expiry.
+
+Run **Microsoft Store package** on `main`, enter a higher version, and check
+**upload**. It uploads both architectures in one submission. Optionally supply
+an existing package flight ID to target a beta flight. The main submission is
+used when flight ID is empty. The CLI is pinned to v0.4.3, using its
+`--inputDirectory` option to collect both AppX files.
+
+The job uses `--noCommit`: the upload stays in draft rather than entering
+certification. Review it in Partner Center before submitting. The CLI recreates
+an existing pending draft from the last published submission, so staged draft
+metadata edits can be lost: upload before editing the draft. Uploads are
+serialized and run only for a manual invocation on `main`; PRs and other branches
+only build downloadable artifacts. Credentials are not used for PR builds.
+
+See [Microsoft's CI setup](https://learn.microsoft.com/en-us/windows/apps/publish/msstore-dev-cli/github-actions)
+and [CLI update prerequisites](https://learn.microsoft.com/en-us/windows/apps/publish/msstore-dev-cli/overview).
+
 ## Private beta submission
 
 In Partner Center, create the first submission for Hasht:
