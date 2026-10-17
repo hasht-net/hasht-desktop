@@ -2,6 +2,7 @@
 # not a typo for something more Electron-specific — this ships in the code
 # signature / macOS keychain entries, so it's not a cosmetic rename later.
 appId: net.hasht.app
+copyright: Copyright © 2026 Hasht LLC
 productName: Hasht
 directories:
   output: release
@@ -85,8 +86,8 @@ linux:
     - from: build/icon.png
       to: icon.png
   # deb and rpm both require a Maintainer field. Overrides the `author` derived
-  # default (Ralph's personal no-reply address) with the project's own contact.
-  maintainer: Hasht <support@hasht.net>
+  # default with the company contact.
+  maintainer: Hasht LLC <hello@hasht.net>
   synopsis: Hasht desktop client for the self-hosted chat app
   description: |
     Thin desktop shell for the self-hosted chat app. Connects to a server you
