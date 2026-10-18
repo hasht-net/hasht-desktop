@@ -1,0 +1,23 @@
+# Store uploads are unsigned locally; Microsoft signs them after certification.
+# electron-builder 26 calls the Store-compatible package target "appx".
+extends: ./electron-builder.yml
+publish: null
+forceCodeSigning: false
+directories:
+  output: release-store
+win:
+  # A scalar replaces the inherited NSIS target instead of merging arrays.
+  # The dist:store command selects both architectures.
+  target: appx
+  signExecutable: false
+  artifactName: "${productName}-${version}-store-${arch}.${ext}"
+appx:
+  identityName: HashtLLC.Hasht
+  publisher: CN=CA077345-9160-40A9-A368-5AEFC4E1EC8F
+  publisherDisplayName: Hasht LLC
+  applicationId: Hasht
+  displayName: Hasht
+  backgroundColor: transparent
+  # The Store owns updates. The fourth version component stays zero.
+  electronUpdaterAware: false
+  setBuildNumber: false

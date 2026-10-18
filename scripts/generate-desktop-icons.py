@@ -55,6 +55,15 @@ def main():
         mark = source.convert("RGBA")
     mark = mark.crop(mark.getchannel("A").getbbox())
     render(mark, 1024).save(ROOT / "build/icon.png")
+    # Store package assets use the same mark as the desktop launchers.
+    store_dir = ROOT / "build/appx"
+    store_dir.mkdir(exist_ok=True)
+    for name, size in (("StoreLogo.png", 50), ("Square150x150Logo.png", 150),
+                       ("Square44x44Logo.png", 44)):
+        render(mark, size).save(store_dir / name)
+    wide = Image.new("RGBA", (310, 150))
+    wide.alpha_composite(render(mark, 150), (80, 0))
+    wide.save(store_dir / "Wide310x150Logo.png")
     entries, payloads = [], []
     offset = 6 + 16 * len(WINDOWS_SIZES)
     for size in WINDOWS_SIZES:

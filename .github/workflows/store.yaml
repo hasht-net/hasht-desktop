@@ -1,0 +1,105 @@
+name: Microsoft Store package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Store version: three integers, e.g. 0.1.1 (increase for each beta upload)'
+        required: true
+        default: '0.1.1'
+      upload:
+        description: 'Upload an update to Partner Center draft (requires first Store publication and credentials)'
+        type: boolean
+        default: false
+      flight_id:
+        description: 'Optional package flight ID; leave empty for the main submission'
+        type: string
+        default: ''
+  pull_request:
+    paths:
+      - '.github/workflows/store.yaml'
+      - 'electron-builder*.yml'
+      - 'package*.json'
+      - 'src/**'
+      - 'build/**'
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    # Serialize uploads for this app; parallel drafts can overwrite one another.
+    concurrency:
+      group: store-${{ github.event_name == 'workflow_dispatch' && 'upload' || github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Set numeric Store version
+        shell: bash
+        env:
+          STORE_VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          node <<'JS'
+          const fs = require('node:fs');
+          const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const version = process.env.STORE_VERSION || pkg.version;
+          if (!/^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(version) ||
+              version.split('.').some(n => Number(n) > 65535) || version === '0.0.0') {
+            throw new Error('Store version must be three integers from 0 through 65535, greater than 0.0.0');
+          }
+          pkg.version = version;
+          fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          JS
+      - name: Build unsigned Store packages
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist:store
+      - name: Upload packages for Partner Center
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: microsoft-store-packages
+          path: release-store/*.appx
+          if-no-files-found: error
+
+      - name: Set up Microsoft Store CLI
+        if: github.event_name == 'workflow_dispatch' && inputs.upload && github.ref == 'refs/heads/main'
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
+        with:
+          version: v0.4.3
+      - name: Upload update to Partner Center draft
+        if: github.event_name == 'workflow_dispatch' && inputs.upload && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          STORE_TENANT_ID: ${{ secrets.STORE_TENANT_ID }}
+          STORE_SELLER_ID: ${{ secrets.STORE_SELLER_ID }}
+          STORE_CLIENT_ID: ${{ secrets.STORE_CLIENT_ID }}
+          STORE_CLIENT_SECRET: ${{ secrets.STORE_CLIENT_SECRET }}
+          STORE_FLIGHT_ID: ${{ inputs.flight_id }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @('STORE_TENANT_ID', 'STORE_SELLER_ID', 'STORE_CLIENT_ID', 'STORE_CLIENT_SECRET')) {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($name))) {
+              throw "Missing GitHub repository secret: $name"
+            }
+          }
+          if ((Get-ChildItem release-store/*.appx).Count -ne 2) {
+            throw 'Expected both x64 and ARM64 AppX packages'
+          }
+          msstore reconfigure --tenantId $env:STORE_TENANT_ID --sellerId $env:STORE_SELLER_ID --clientId $env:STORE_CLIENT_ID --clientSecret $env:STORE_CLIENT_SECRET
+          if ($LASTEXITCODE -ne 0) { throw 'Store CLI authentication configuration failed' }
+          # Electron publisher uploads every .appx in this directory in one submission.
+          # --noCommit prevents submitting the draft for certification.
+          $uploadArgs = @('publish', '.', '--appId', '9MZXHPV3BCQL', '--inputDirectory', 'release-store', '--noCommit', '--uploadTimeout', '1800')
+          if (-not [string]::IsNullOrWhiteSpace($env:STORE_FLIGHT_ID)) {
+            $uploadArgs += @('--flightId', $env:STORE_FLIGHT_ID)
+          }
+          msstore @uploadArgs
+          if ($LASTEXITCODE -ne 0) { throw 'Partner Center draft upload failed' }
