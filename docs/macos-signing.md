@@ -18,7 +18,7 @@ Connect and distributed through TestFlight / the App Store.
    from Keychain Access as a password-protected .p12. Do not commit them.
 4. Create a Mac App Store distribution provisioning profile for that explicit
    App ID and Apple Distribution certificate; download the .provisionprofile.
-5. Generate an app-specific password for the Apple account used to notarize.
+5. Use the App Store Connect team API key described below for notarization.
    App Store Connect access alone does not guarantee permission to create
    certificates: ask the Account Holder/Admin for developer-resource access.
 
@@ -35,13 +35,11 @@ In Hasht-net/hasht-desktop Settings > Secrets and variables > Actions, add:
 | MAC_INSTALLER_P12 | Base64 Mac Installer Distribution .p12 |
 | MAC_INSTALLER_PASSWORD | Its export password |
 | MAC_APP_STORE_PROFILE | Base64 .provisionprofile |
-| APPLE_ID | Apple account email for notarization |
-| APPLE_APP_SPECIFIC_PASSWORD | Its app-specific password |
 
-Add repository **variable** `APPLE_TEAM_ID` containing your Team ID.
 On macOS, `base64 -i /path/to/file | pbcopy` copies the encoded file for pasting
 into GitHub Secrets. Keep passwords and encoded private keys out of chat/logs.
-An App Store Connect API key is unnecessary for this initial manual upload.
+Direct builds use the same `ASC_API_KEY_P8`, `ASC_KEY_ID` and `ASC_ISSUER_ID`
+configuration as TestFlight uploads (below); no app-specific password is needed.
 
 ## Build and upload
 
