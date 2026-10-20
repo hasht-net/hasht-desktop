@@ -87,3 +87,20 @@ material is written only into a private temporary directory and removed on exit.
 A successful upload does not mean Apple processing or beta review has completed.
 Configure an internal TestFlight group with automatic distribution of new builds
 in App Store Connect. External testers still require beta review.
+
+## Desktop auto-updates
+
+Direct-download macOS builds use electron-updater and Squirrel.Mac. Updates
+are downloaded in the background, then the app offers Restart now / Later.
+Restart now replaces the installed app without opening a DMG; Later leaves the
+update staged for the next quit. TestFlight/App Store builds remain store-managed.
+
+Keep both DMG and ZIP targets and the generated `*-mac.yml` update manifests
+on the public GitHub release. Stable installations reject prereleases; beta
+installations can receive compatible beta releases. Every future macOS update
+must be signed with the same Apple developer identity/team.
+
+Existing unsigned builds still contain the old DMG installer flow. Install the
+first signed release manually once; subsequent signed releases use automatic
+updates. A signed-to-signed install/restart test requires two published releases
+and remains a release validation step.
