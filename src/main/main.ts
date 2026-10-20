@@ -36,7 +36,8 @@ import { initAutoUpdater, checkForUpdatesFromMenu } from "./updater";
 import { openScreenCaptureSettings, screenCaptureStatus } from "./screenShare";
 import { getDateTimePreferences } from "./dateTimePreferences";
 
-if (!app.requestSingleInstanceLock()) {
+// App Sandbox does not support Electron’s single-instance lock.
+if (!process.mas && !app.requestSingleInstanceLock()) {
   // app.quit() only schedules a quit; evaluation would continue and whenReady
   // would still fire, opening a duplicate window.
   app.exit(0);

@@ -31,6 +31,7 @@ const path = require("node:path");
  */
 exports.default = async function afterPack(context) {
   if (context.electronPlatformName !== "darwin") return;
+  if (context.targets.some((target) => target.name.startsWith("mas"))) return;
 
   // A real identity is configured, so electron-builder is doing the signing
   // properly and must not be overwritten with a weaker ad-hoc signature.
