@@ -61,3 +61,26 @@ Before expanding testing, verify sandboxed file upload/download, microphone,
 camera, screen sharing, notifications and browser-handoff sign-in. MAS builds
 use App Store/TestFlight updates rather than the GitHub DMG updater. A build
 that signs successfully still needs Apple processing and runtime testing.
+
+## Automatic prerelease uploads
+
+Publishing a GitHub **prerelease** triggers Signed macOS to build, validate and
+upload the universal MAS package to App Store Connect. This workflow must be
+included in the released commit. Tags such as `v0.1.2-beta.1` use numeric Apple
+version `0.1.2`; the workflow run number and attempt form the build number.
+Stable releases do not trigger this TestFlight job. Manual dispatch supports
+an `upload` checkbox, defaulting to false. Branch pushes only build artifacts.
+
+In App Store Connect > Users and Access > Integrations > App Store Connect API,
+create a **Team Key** with Developer access. Download the .p8 once and save its
+raw text (not base64) as GitHub secret `ASC_API_KEY_P8`. Add repository variables:
+
+- `ASC_KEY_ID`: the key ID.
+- `ASC_ISSUER_ID`: the team key’s issuer UUID.
+- `ASC_MACOS_APP_ID`: the numeric Apple ID under Hasht > App Information.
+
+The workflow uses `xcrun altool --validate-app` and `--upload-package`; API key
+material is written only into a private temporary directory and removed on exit.
+A successful upload does not mean Apple processing or beta review has completed.
+Configure an internal TestFlight group with automatic distribution of new builds
+in App Store Connect. External testers still require beta review.
