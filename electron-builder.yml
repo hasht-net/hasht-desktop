@@ -48,8 +48,8 @@ mac:
     NSCameraUsageDescription: Hasht needs camera access for voice chat.
     # Required for passkeys signed in on a phone (caBLE talks over BLE).
     NSBluetoothAlwaysUsageDescription: Hasht uses Bluetooth to sign in with a passkey on a nearby device.
-  # Notarization: set APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
-  # env vars in CI; electron-builder notarizes automatically when present.
+  # CI signs with Developer ID and notarizes through the Apple team API key.
+  # prepare-macos-signing.py provides the APPLE_API_* environment variables.
 
 dmg:
   icon: build/icon.icns
@@ -102,10 +102,6 @@ publish:
   # build still exits 0, so the release just ends up empty. Our workflow runs
   # on `release: published`, so the release is always already published.
   releaseType: release
-  # This block is also baked into app-update.yml inside the package, which is
-  # where electron-updater (src/main/updater.ts) reads the feed from. Two
-  # things still gate updates actually working:
-  #   - the repo must be public, or the update check 404s with no token;
-  #   - macOS updates need a signed build (Squirrel.Mac refuses to swap in an
-  #     unsigned app), so mac auto-update stays broken until signing is set up.
-  # Windows NSIS and Linux AppImage update fine unsigned.
+  # Baked into app-update.yml for electron-updater. The public GitHub feed
+  # supplies signed macOS ZIP updates and Windows/Linux update artifacts.
+  # Both ZIP and DMG targets must remain enabled for Squirrel.Mac updates.

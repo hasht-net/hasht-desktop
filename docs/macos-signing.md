@@ -18,7 +18,7 @@ Connect and distributed through TestFlight / the App Store.
    from Keychain Access as a password-protected .p12. Do not commit them.
 4. Create a Mac App Store distribution provisioning profile for that explicit
    App ID and Apple Distribution certificate; download the .provisionprofile.
-5. Generate an app-specific password for the Apple account used to notarize.
+5. Use the App Store Connect team API key described below for notarization.
    App Store Connect access alone does not guarantee permission to create
    certificates: ask the Account Holder/Admin for developer-resource access.
 
@@ -35,21 +35,24 @@ In Hasht-net/hasht-desktop Settings > Secrets and variables > Actions, add:
 | MAC_INSTALLER_P12 | Base64 Mac Installer Distribution .p12 |
 | MAC_INSTALLER_PASSWORD | Its export password |
 | MAC_APP_STORE_PROFILE | Base64 .provisionprofile |
-| APPLE_ID | Apple account email for notarization |
-| APPLE_APP_SPECIFIC_PASSWORD | Its app-specific password |
 
-Add repository **variable** `APPLE_TEAM_ID` containing your Team ID.
 On macOS, `base64 -i /path/to/file | pbcopy` copies the encoded file for pasting
 into GitHub Secrets. Keep passwords and encoded private keys out of chat/logs.
-An App Store Connect API key is unnecessary for this initial manual upload.
+Direct builds use the same `ASC_API_KEY_P8`, `ASC_KEY_ID` and `ASC_ISSUER_ID`
+configuration as TestFlight uploads (below); no app-specific password is needed.
 
 ## Build and upload
 
-Run Actions > Signed macOS > Run workflow with the intended branch, channel
-`testflight` or `direct`, and numeric version such as `0.1.1`. The run number
+Run Actions > Signed macOS > Run workflow with channel
+`testflight` or `direct`, and an existing release tag such as `v0.1.15-beta.4`.
+The checkout and version both come from that tag. Direct builds preserve the
+full version, including prerelease suffix, in package metadata and filenames.
+Both channels explicitly set numeric `CFBundleShortVersionString` and
+`CFBundleVersion` values; TestFlight package metadata also uses the numeric core. The run number
 provides a monotonically increasing CFBundleVersion for repeat uploads.
-This workflow uploads artifacts only; it does not publish GitHub releases or
-change the existing unsigned release workflow.
+Manual Signed macOS runs retain artifacts. The normal Release workflow signs
+and notarizes macOS DMG/ZIP files before publishing them alongside Windows/Linux
+installers using the same release tag. Missing signing credentials fail the job.
 
 For TestFlight, download the artifact and upload the signed universal .pkg
 using Apple's Transporter app. After processing in App Store Connect, complete
@@ -84,3 +87,20 @@ material is written only into a private temporary directory and removed on exit.
 A successful upload does not mean Apple processing or beta review has completed.
 Configure an internal TestFlight group with automatic distribution of new builds
 in App Store Connect. External testers still require beta review.
+
+## Desktop auto-updates
+
+Direct-download macOS builds use electron-updater and Squirrel.Mac. Updates
+are downloaded in the background, then the app offers Restart now / Later.
+Restart now replaces the installed app without opening a DMG; Later leaves the
+update staged for the next quit. TestFlight/App Store builds remain store-managed.
+
+Keep both DMG and ZIP targets and the generated `*-mac.yml` update manifests
+on the public GitHub release. Stable installations reject prereleases; beta
+installations can receive compatible beta releases. Every future macOS update
+must be signed with the same Apple developer identity/team.
+
+Existing unsigned builds still contain the old DMG installer flow. Install the
+first signed release manually once; subsequent signed releases use automatic
+updates. A signed-to-signed install/restart test requires two published releases
+and remains a release validation step.

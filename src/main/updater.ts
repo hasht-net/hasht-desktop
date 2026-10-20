@@ -1,16 +1,10 @@
-import { app, dialog, net, shell } from "electron";
+import { app, dialog } from "electron";
 import { autoUpdater } from "electron-updater";
-import { createWriteStream } from "node:fs";
-import path from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { setQuitting } from "./windows";
 
 // Six hours: long enough that a long-running window isn't checking constantly,
 // short enough that a machine left open for days still picks up a release.
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
-
-const REPO = "Hasht-net/hasht-desktop";
 
 // Auto-updates against the GitHub releases the release workflow publishes.
 // The feed URL comes from electron-builder.yml's `publish` block, baked into
@@ -18,17 +12,10 @@ const REPO = "Hasht-net/hasht-desktop";
 export function initAutoUpdater(): void {
   // App Store and TestFlight own updates for sandboxed MAS builds.
   if (process.mas) return;
-  // macOS gets the download-and-open-the-DMG fallback (see macUpdateFlow):
-  // Squirrel.Mac refuses to swap in our unsigned build, so electron-updater's
-  // in-place update can't work here yet.
-  if (process.platform === "darwin") {
-    void checkForMacUpdate({ manual: false });
-    setInterval(() => void checkForMacUpdate({ manual: false }), CHECK_INTERVAL_MS);
-    return;
-  }
-
   if (!isUpdatable()) return;
 
+  // Signed macOS ZIP updates are staged by Squirrel.Mac, which validates the
+  // app signature and replaces the installed app when it restarts.
   autoUpdater.autoDownload = true;
   // The update is staged on disk and swapped in on the next quit, so a user
   // who ignores the prompt still ends up current without another download.
@@ -61,11 +48,6 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
     });
     return;
   }
-  if (process.platform === "darwin") {
-    await checkForMacUpdate({ manual: true });
-    return;
-  }
-
   if (!isUpdatable()) {
     await dialog.showMessageBox({
       type: "info",
@@ -136,147 +118,6 @@ async function promptToInstall(version: string): Promise<void> {
   // handler cancels the quit and the install never runs.
   setQuitting(true);
   autoUpdater.quitAndInstall();
-}
-
-// --- macOS DMG fallback --------------------------------------------------------
-//
-// electron-updater's in-place update relies on Squirrel.Mac, which will not
-// replace an app whose code signature it can't validate — and our macOS builds
-// are unsigned/ad-hoc signed (see electron-builder.yml). So instead of swapping
-// the app out from under itself, we fetch the DMG built for this Mac's
-// architecture and open it, leaving the user to drag the new Hasht over the old
-// one. Once we ship a signed, notarized build, delete everything below and let
-// the Windows/Linux path (autoDownload + quitAndInstall) run on macOS too.
-
-interface GithubAsset {
-  name: string;
-  browser_download_url: string;
-}
-interface GithubRelease {
-  tag_name: string;
-  assets: GithubAsset[];
-}
-
-async function checkForMacUpdate(opts: { manual: boolean }): Promise<void> {
-  if (!app.isPackaged) return;
-  const { manual } = opts;
-
-  let release: GithubRelease;
-  try {
-    release = await fetchLatestRelease();
-  } catch (err) {
-    if (manual) {
-      await dialog.showMessageBox({
-        type: "warning",
-        message: "Couldn't check for updates.",
-        detail: err instanceof Error ? err.message : String(err),
-      });
-    }
-    return;
-  }
-
-  const latest = release.tag_name.replace(/^v/, "");
-  if (!isNewer(latest, app.getVersion())) {
-    if (manual) {
-      await dialog.showMessageBox({
-        type: "info",
-        message: "You're up to date.",
-        detail: `Hasht ${app.getVersion()} is the latest version.`,
-      });
-    }
-    return;
-  }
-
-  // Artifact names look like `Hasht-0.1.4-arm64.dmg` (electron-builder.yml
-  // forces the arch suffix onto every mac dmg, x64 included, so there's no
-  // "default" filename that's missing it).
-  const asset = release.assets.find(
-    (a) => a.name.endsWith(`-${process.arch}.dmg`),
-  );
-  if (!asset) {
-    if (manual) {
-      await dialog.showMessageBox({
-        type: "warning",
-        message: `Hasht ${latest} is available.`,
-        detail: "No matching download was found for this Mac — get it from the Releases page.",
-      });
-    }
-    return;
-  }
-
-  const { response } = await dialog.showMessageBox({
-    type: "info",
-    buttons: ["Download", "Later"],
-    defaultId: 0,
-    cancelId: 1,
-    message: `Hasht ${latest} is available.`,
-    detail: "It'll download and open — drag Hasht into your Applications folder to finish updating.",
-  });
-  if (response !== 0) return;
-
-  try {
-    const dmgPath = await downloadAsset(asset);
-    const err = await shell.openPath(dmgPath);
-    if (err) throw new Error(err);
-  } catch (err) {
-    await dialog.showMessageBox({
-      type: "warning",
-      message: "Update download failed.",
-      detail: err instanceof Error ? err.message : String(err),
-    });
-  }
-}
-
-async function fetchLatestRelease(): Promise<GithubRelease> {
-  // The stable "latest" endpoint skips prereleases; a beta build stays on the
-  // beta track by taking the most recent release of any kind instead.
-  const onBeta = app.getVersion().includes("-");
-  const url = onBeta
-    ? `https://api.github.com/repos/${REPO}/releases?per_page=1`
-    : `https://api.github.com/repos/${REPO}/releases/latest`;
-
-  const res = await net.fetch(url, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "User-Agent": "hasht-desktop-updater",
-    },
-  });
-  if (!res.ok) throw new Error(`GitHub API responded ${res.status}`);
-  const body = await res.json();
-  const release = onBeta ? body[0] : body;
-  if (!release?.tag_name) throw new Error("No release found.");
-  return release as GithubRelease;
-}
-
-async function downloadAsset(asset: GithubAsset): Promise<string> {
-  const res = await net.fetch(asset.browser_download_url, {
-    headers: { "User-Agent": "hasht-desktop-updater" },
-  });
-  if (!res.ok || !res.body) {
-    throw new Error(`Download responded ${res.status}`);
-  }
-  const dest = path.join(app.getPath("downloads"), asset.name);
-  await pipeline(Readable.fromWeb(res.body as never), createWriteStream(dest));
-  return dest;
-}
-
-// Enough of a semver compare for our `X.Y.Z` / `X.Y.Z-beta.N` tags: a stable
-// release always beats the prerelease of the same version.
-function isNewer(candidate: string, current: string): boolean {
-  const parse = (v: string) => {
-    const [core, pre] = v.split("-");
-    return { nums: core.split(".").map((n) => parseInt(n, 10) || 0), pre };
-  };
-  const a = parse(candidate);
-  const b = parse(current);
-  for (let i = 0; i < 3; i++) {
-    const diff = (a.nums[i] ?? 0) - (b.nums[i] ?? 0);
-    if (diff !== 0) return diff > 0;
-  }
-  if (!a.pre && b.pre) return true;
-  if (a.pre && !b.pre) return false;
-  if (a.pre && b.pre) return a.pre > b.pre;
-  return false;
 }
 
 function isUpdatable(): boolean {

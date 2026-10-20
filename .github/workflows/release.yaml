@@ -14,9 +14,8 @@ name: "Release"
 # Each OS builds on its own native runner (electron-builder needs macOS to
 # produce a .app, Windows for NSIS), shipping both x86_64 and arm64.
 #
-# Signing: not configured. Both macOS and Windows builds are unsigned, so
-# Gatekeeper/SmartScreen will warn on first launch. See electron-builder.yml
-# for the secrets to add once certificates exist.
+# macOS builds require Developer ID signing and Apple notarization.
+# Windows signing remains unconfigured.
 
 on:
   release:
@@ -103,13 +102,20 @@ jobs:
       - name: "Compile"
         run: npm run build
 
+      - name: "Prepare macOS signing and notarization"
+        if: matrix.platform == 'mac'
+        env:
+          CSC_LINK: ${{ secrets.MAC_DEVELOPER_ID_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_DEVELOPER_ID_PASSWORD }}
+          ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+          ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+        run: python3 scripts/prepare-macos-signing.py
+
       - name: "Build ${{ matrix.platform }}"
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # No Developer ID in CI yet; without this electron-builder fails the
-          # macOS build hunting for a signing identity.
-          CSC_IDENTITY_AUTO_DISCOVERY: false
           SHORT_SHA: ${{ steps.meta.outputs.short_sha }}
           # The publisher otherwise refuses to attach to a release published
           # more than 2 hours ago, which silently breaks re-runs and any run
@@ -121,13 +127,41 @@ jobs:
           else
             PUBLISH=never
           fi
+          SIGNING_OPTIONS=()
+          if [ "${{ matrix.platform }}" = mac ]; then
+            unset CSC_INSTALLER_LINK CSC_INSTALLER_KEY_PASSWORD
+            APPLE_VERSION=$(node -p "require('./package.json').version.split('-')[0]")
+            SIGNING_OPTIONS+=(--config.forceCodeSigning=true --config.mac.notarize=true
+              --config.mac.bundleShortVersion="$APPLE_VERSION"
+              --config.buildVersion="$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT")
+          else
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
           # matrix.platform rather than electron-builder's ${os} macro: this is
           # already exactly mac/win/linux, and it can't silently pass through
           # unexpanded the way an unsupported macro would.
           npx electron-builder --${{ matrix.platform }} \
-            --publish "$PUBLISH" \
+            --publish "$PUBLISH" "${SIGNING_OPTIONS[@]}" \
             --config.artifactName='${productName}-${version}-'"$SHORT_SHA-${{ matrix.platform }}"'-${arch}.${ext}' \
             --config.extraMetadata.commit="${{ github.sha }}"
+
+      - name: "Verify signed macOS apps"
+        if: matrix.platform == 'mac'
+        run: |
+          for app in release/mac*/Hasht.app; do
+            short=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
+            build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")
+            [[ "$short" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid Apple marketing version'; exit 1; }
+            [[ "$build" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo 'Invalid Apple build version'; exit 1; }
+            codesign --verify --deep --strict --verbose=2 "$app"
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose=2 "$app"
+          done
+
+      - name: "Remove notarization API key"
+        if: always() && env.NOTARY_KEY_DIR != ''
+        shell: bash
+        run: rm -rf "$NOTARY_KEY_DIR"
 
       - name: "Upload installers (dry run only)"
         if: github.event_name == 'workflow_dispatch'
