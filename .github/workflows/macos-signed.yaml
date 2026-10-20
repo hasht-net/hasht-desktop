@@ -48,6 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+            APPLE_VERSION="${BASH_REMATCH[1]}"
             BUILD_VERSION="${RELEASE_TAG#v}"
             if [ "$BUILD_CHANNEL" = testflight ]; then
               BUILD_VERSION="${BASH_REMATCH[1]}"
@@ -55,6 +56,7 @@ jobs:
           else
             echo '::error::Release tag must look like v0.1.15 or v0.1.15-beta.4'; exit 1
           fi
+          echo "APPLE_VERSION=$APPLE_VERSION" >> "$GITHUB_ENV"
           echo "BUILD_VERSION=$BUILD_VERSION" >> "$GITHUB_ENV"
           echo "BUILD_NUMBER=$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
           if [ "$UPLOAD_TO_APPLE" = true ]; then
@@ -99,14 +101,18 @@ jobs:
           set -euo pipefail
           if [ "$BUILD_CHANNEL" = testflight ]; then
             printf '%s' "$MAS_PROFILE" | base64 --decode > build/embedded.provisionprofile
-            npx electron-builder --config electron-builder.mas.yml --mac mas --universal --publish never --config.buildVersion="$BUILD_NUMBER"
+            npx electron-builder --config electron-builder.mas.yml --mac mas --universal --publish never --config.buildVersion="$BUILD_NUMBER" --config.mac.bundleShortVersion="$APPLE_VERSION"
             pkgutil --check-signature release/mas-universal/*.pkg
           else
             # Empty installer links resolve to the project directory in electron-builder.
             # DMG/ZIP distribution needs only the Developer ID Application identity.
             unset CSC_INSTALLER_LINK CSC_INSTALLER_KEY_PASSWORD
-            npx electron-builder --mac --publish never --config.forceCodeSigning=true --config.mac.notarize=true --config.buildVersion="$BUILD_NUMBER"
+            npx electron-builder --mac --publish never --config.forceCodeSigning=true --config.mac.notarize=true --config.buildVersion="$BUILD_NUMBER" --config.mac.bundleShortVersion="$APPLE_VERSION"
             for app in release/mac*/Hasht.app; do
+              short=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
+              build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")
+              [[ "$short" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid Apple marketing version'; exit 1; }
+              [[ "$build" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo 'Invalid Apple build version'; exit 1; }
               codesign --verify --deep --strict --verbose=2 "$app"
               xcrun stapler validate "$app"
               spctl --assess --type execute --verbose=2 "$app"

@@ -46,7 +46,9 @@ configuration as TestFlight uploads (below); no app-specific password is needed.
 Run Actions > Signed macOS > Run workflow with channel
 `testflight` or `direct`, and an existing release tag such as `v0.1.15-beta.4`.
 The checkout and version both come from that tag. Direct builds preserve the
-full version, including prerelease suffix; TestFlight uses the numeric core. The run number
+full version, including prerelease suffix, in package metadata and filenames.
+Both channels explicitly set numeric `CFBundleShortVersionString` and
+`CFBundleVersion` values; TestFlight package metadata also uses the numeric core. The run number
 provides a monotonically increasing CFBundleVersion for repeat uploads.
 Manual Signed macOS runs retain artifacts. The normal Release workflow signs
 and notarizes macOS DMG/ZIP files before publishing them alongside Windows/Linux

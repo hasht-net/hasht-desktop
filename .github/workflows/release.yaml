@@ -130,7 +130,10 @@ jobs:
           SIGNING_OPTIONS=()
           if [ "${{ matrix.platform }}" = mac ]; then
             unset CSC_INSTALLER_LINK CSC_INSTALLER_KEY_PASSWORD
-            SIGNING_OPTIONS+=(--config.forceCodeSigning=true --config.mac.notarize=true)
+            APPLE_VERSION=$(node -p "require('./package.json').version.split('-')[0]")
+            SIGNING_OPTIONS+=(--config.forceCodeSigning=true --config.mac.notarize=true
+              --config.mac.bundleShortVersion="$APPLE_VERSION"
+              --config.buildVersion="$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT")
           else
             export CSC_IDENTITY_AUTO_DISCOVERY=false
           fi
@@ -146,6 +149,10 @@ jobs:
         if: matrix.platform == 'mac'
         run: |
           for app in release/mac*/Hasht.app; do
+            short=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")
+            build=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$app/Contents/Info.plist")
+            [[ "$short" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo 'Invalid Apple marketing version'; exit 1; }
+            [[ "$build" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]] || { echo 'Invalid Apple build version'; exit 1; }
             codesign --verify --deep --strict --verbose=2 "$app"
             xcrun stapler validate "$app"
             spctl --assess --type execute --verbose=2 "$app"
