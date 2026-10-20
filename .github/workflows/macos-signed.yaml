@@ -29,14 +29,11 @@ jobs:
     runs-on: macos-26
     timeout-minutes: 60
     env:
-      CSC_LINK: ${{ inputs.channel == 'direct' && secrets.MAC_DEVELOPER_ID_P12 || secrets.MAC_APP_STORE_P12 }}
-      CSC_KEY_PASSWORD: ${{ inputs.channel == 'direct' && secrets.MAC_DEVELOPER_ID_PASSWORD || secrets.MAC_APP_STORE_PASSWORD }}
+      CSC_LINK: ${{ inputs.channel != 'direct' && secrets.MAC_APP_STORE_P12 || secrets.MAC_DEVELOPER_ID_P12 }}
+      CSC_KEY_PASSWORD: ${{ inputs.channel != 'direct' && secrets.MAC_APP_STORE_PASSWORD || secrets.MAC_DEVELOPER_ID_PASSWORD }}
       CSC_INSTALLER_LINK: ${{ inputs.channel != 'direct' && secrets.MAC_INSTALLER_P12 || '' }}
       CSC_INSTALLER_KEY_PASSWORD: ${{ secrets.MAC_INSTALLER_PASSWORD }}
       MAS_PROFILE: ${{ secrets.MAC_APP_STORE_PROFILE }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
       BUILD_CHANNEL: ${{ inputs.channel || 'testflight' }}
       BUILD_VERSION: ${{ inputs.version || '0.1.1' }}
       RELEASE_TAG: ${{ github.event.release.tag_name }}
@@ -68,7 +65,7 @@ jobs:
           if [ "$BUILD_CHANNEL" = testflight ]; then
             required+=(CSC_INSTALLER_LINK CSC_INSTALLER_KEY_PASSWORD MAS_PROFILE)
           else
-            required+=(APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID)
+            required+=(ASC_KEY_ID ASC_ISSUER_ID ASC_API_KEY_P8)
           fi
           if [ "$UPLOAD_TO_APPLE" = true ]; then
             required+=(ASC_KEY_ID ASC_ISSUER_ID ASC_APP_ID ASC_API_KEY_P8)
@@ -85,6 +82,18 @@ jobs:
         run: |
           npm pkg set version="$BUILD_VERSION"
           npm run build
+      - name: Prepare notarization API key
+        if: env.BUILD_CHANNEL == 'direct'
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          key_dir=$(mktemp -d "$RUNNER_TEMP/hasht-notary.XXXXXX")
+          echo "NOTARY_KEY_DIR=$key_dir" >> "$GITHUB_ENV"
+          printf '%s' "$ASC_API_KEY_P8" > "$key_dir/AuthKey_$ASC_KEY_ID.p8"
+          echo "APPLE_API_KEY=$key_dir/AuthKey_$ASC_KEY_ID.p8" >> "$GITHUB_ENV"
+          echo "APPLE_API_KEY_ID=$ASC_KEY_ID" >> "$GITHUB_ENV"
+          echo "APPLE_API_ISSUER=$ASC_ISSUER_ID" >> "$GITHUB_ENV"
       - name: Build signed installers
         shell: bash
         run: |
@@ -117,3 +126,6 @@ jobs:
       - name: Remove provisioning profile
         if: always()
         run: rm -f build/embedded.provisionprofile
+      - name: Remove notarization API key
+        if: always() && env.NOTARY_KEY_DIR != ''
+        run: rm -rf "$NOTARY_KEY_DIR"
