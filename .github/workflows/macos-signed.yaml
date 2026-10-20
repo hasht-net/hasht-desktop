@@ -103,6 +103,9 @@ jobs:
             npx electron-builder --config electron-builder.mas.yml --mac mas --universal --publish never --config.buildVersion="$BUILD_NUMBER"
             pkgutil --check-signature release/mas-universal/*.pkg
           else
+            # Empty installer links resolve to the project directory in electron-builder.
+            # DMG/ZIP distribution needs only the Developer ID Application identity.
+            unset CSC_INSTALLER_LINK CSC_INSTALLER_KEY_PASSWORD
             npx electron-builder --mac --publish never --config.forceCodeSigning=true --config.mac.notarize=true --config.buildVersion="$BUILD_NUMBER"
             for app in release/mac*/Hasht.app; do
               codesign --verify --deep --strict --verbose=2 "$app"
