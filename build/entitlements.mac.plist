@@ -19,19 +19,7 @@
     <true/>
     <key>com.apple.security.network.client</key>
     <true/>
-    <!--
-      Passkeys. Bluetooth backs caBLE (scan-a-QR, authenticate on your phone);
-      the keychain access group is where Chromium's macOS platform
-      authenticator (Touch ID) stores credentials — without it that
-      authenticator isn't offered at all.
-      TODO: $(AppIdentifierPrefix) only resolves against a real Team ID at
-      signing time; revisit when the signing identity is set up.
-    -->
-    <key>com.apple.security.device.bluetooth</key>
-    <true/>
-    <key>keychain-access-groups</key>
-    <array>
-      <string>$(AppIdentifierPrefix)net.hasht.app</string>
-    </array>
+    <!-- Browser-handoff passkey sign-in owns its keychain and Bluetooth
+         access. The shell does not need a restricted keychain access group. -->
   </dict>
 </plist>

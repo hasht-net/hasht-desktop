@@ -1,0 +1,119 @@
+name: Signed macOS
+on:
+  push:
+    branches: [ci/macos-signing]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Distribution channel
+        type: choice
+        options: [testflight, direct]
+        required: true
+      version:
+        description: Numeric version (for example 0.1.1)
+        required: true
+      upload:
+        description: Upload TestFlight build to App Store Connect
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: signed-macos-${{ inputs.channel || 'testflight' }}
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.event_name != 'release' || github.event.release.prerelease
+    runs-on: macos-26
+    timeout-minutes: 60
+    env:
+      CSC_LINK: ${{ inputs.channel == 'direct' && secrets.MAC_DEVELOPER_ID_P12 || secrets.MAC_APP_STORE_P12 }}
+      CSC_KEY_PASSWORD: ${{ inputs.channel == 'direct' && secrets.MAC_DEVELOPER_ID_PASSWORD || secrets.MAC_APP_STORE_PASSWORD }}
+      CSC_INSTALLER_LINK: ${{ inputs.channel != 'direct' && secrets.MAC_INSTALLER_P12 || '' }}
+      CSC_INSTALLER_KEY_PASSWORD: ${{ secrets.MAC_INSTALLER_PASSWORD }}
+      MAS_PROFILE: ${{ secrets.MAC_APP_STORE_PROFILE }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+      BUILD_CHANNEL: ${{ inputs.channel || 'testflight' }}
+      BUILD_VERSION: ${{ inputs.version || '0.1.1' }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      UPLOAD_TO_APPLE: ${{ github.event_name == 'release' || inputs.upload }}
+      ASC_KEY_ID: ${{ vars.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ vars.ASC_ISSUER_ID }}
+      ASC_APP_ID: ${{ vars.ASC_MACOS_APP_ID }}
+      ASC_API_KEY_P8: ${{ secrets.ASC_API_KEY_P8 }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.0.0
+      - name: Check signing prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = release ]; then
+            if [[ "$RELEASE_TAG" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+              BUILD_VERSION="${BASH_REMATCH[1]}"
+            else
+              echo '::error::Prerelease tag must look like v0.1.1-beta.1'; exit 1
+            fi
+          fi
+          echo "BUILD_VERSION=$BUILD_VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_ENV"
+          if [ "$UPLOAD_TO_APPLE" = true ]; then
+            [ "$BUILD_CHANNEL" = testflight ] || { echo '::error::Only TestFlight packages can be uploaded to Apple'; exit 1; }
+          fi
+          [[ "$BUILD_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo '::error::Version must be X.Y.Z'; exit 1; }
+          required=(CSC_LINK CSC_KEY_PASSWORD)
+          if [ "$BUILD_CHANNEL" = testflight ]; then
+            required+=(CSC_INSTALLER_LINK CSC_INSTALLER_KEY_PASSWORD MAS_PROFILE)
+          else
+            required+=(APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID)
+          fi
+          if [ "$UPLOAD_TO_APPLE" = true ]; then
+            required+=(ASC_KEY_ID ASC_ISSUER_ID ASC_APP_ID ASC_API_KEY_P8)
+          fi
+          for name in "${required[@]}"; do
+            [ -n "${!name}" ] || { echo "::error::Missing signing configuration: $name"; exit 1; }
+          done
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compile
+        run: |
+          npm pkg set version="$BUILD_VERSION"
+          npm run build
+      - name: Build signed installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$BUILD_CHANNEL" = testflight ]; then
+            printf '%s' "$MAS_PROFILE" | base64 --decode > build/embedded.provisionprofile
+            npx electron-builder --config electron-builder.mas.yml --mac mas --universal --publish never --config.buildVersion="$BUILD_NUMBER"
+            pkgutil --check-signature release/mas-universal/*.pkg
+          else
+            npx electron-builder --mac --publish never --config.forceCodeSigning=true --config.mac.notarize=true --config.buildVersion="$BUILD_NUMBER"
+            for app in release/mac*/Hasht.app; do
+              codesign --verify --deep --strict --verbose=2 "$app"
+              xcrun stapler validate "$app"
+              spctl --assess --type execute --verbose=2 "$app"
+            done
+          fi
+      - name: Upload signed installers
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: macos-${{ inputs.channel || 'testflight' }}-${{ github.run_number }}
+          path: |
+            release/**/*.pkg
+            release/*.dmg
+            release/*.zip
+          if-no-files-found: error
+      - name: Upload to App Store Connect
+        if: env.UPLOAD_TO_APPLE == 'true'
+        shell: bash
+        run: bash scripts/upload-testflight.sh
+      - name: Remove provisioning profile
+        if: always()
+        run: rm -f build/embedded.provisionprofile
