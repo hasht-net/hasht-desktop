@@ -43,11 +43,14 @@ configuration as TestFlight uploads (below); no app-specific password is needed.
 
 ## Build and upload
 
-Run Actions > Signed macOS > Run workflow with the intended branch, channel
-`testflight` or `direct`, and numeric version such as `0.1.1`. The run number
+Run Actions > Signed macOS > Run workflow with channel
+`testflight` or `direct`, and an existing release tag such as `v0.1.15-beta.4`.
+The checkout and version both come from that tag. Direct builds preserve the
+full version, including prerelease suffix; TestFlight uses the numeric core. The run number
 provides a monotonically increasing CFBundleVersion for repeat uploads.
-This workflow uploads artifacts only; it does not publish GitHub releases or
-change the existing unsigned release workflow.
+Manual Signed macOS runs retain artifacts. The normal Release workflow signs
+and notarizes macOS DMG/ZIP files before publishing them alongside Windows/Linux
+installers using the same release tag. Missing signing credentials fail the job.
 
 For TestFlight, download the artifact and upload the signed universal .pkg
 using Apple's Transporter app. After processing in App Store Connect, complete
