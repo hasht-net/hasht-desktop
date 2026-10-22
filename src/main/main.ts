@@ -108,8 +108,7 @@ async function handleDeepLink(link: string): Promise<void> {
 /**
  * "Sign in to the App" in a browser's settings: runs the usual browser handoff
  * for that server. The link can come from any page naming any host, so the
- * dialog is the user's say-so, and doubles as the place the match code is
- * shown since no app screen started this.
+ * dialog naming the host is the user's say-so.
  */
 async function signInFromLink(origin: string): Promise<void> {
   const host = new URL(origin).host;
@@ -121,14 +120,14 @@ async function signInFromLink(origin: string): Promise<void> {
   };
   if (!existing) provisionalServers.set(entry.id, entry);
 
-  await beginBrowserSignIn(entry, async (code) => {
+  await beginBrowserSignIn(entry, async () => {
     const { response } = await dialog.showMessageBox({
       type: "question",
       buttons: ["Continue", "Cancel"],
       defaultId: 0,
       cancelId: 1,
       message: `Sign in to ${host}?`,
-      detail: `Your browser will show a code. Only approve if it matches:\n\n${code.replace(/(.{4})(?=.)/g, "$1 ")}`,
+      detail: "Your browser will open so you can sign in and approve.",
     });
     if (response !== 0) provisionalServers.delete(entry.id);
     return response === 0;
