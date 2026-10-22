@@ -94,8 +94,15 @@ partition, and revokes its saved session when the instance is reachable. Other
 saved accounts keep their own partitions and sessions. Remote logout is best
 effort when the instance is unavailable; local storage is still cleared.
 
-The server frontend can call `chatDesktop.openSecuritySettings(userId)` to open
-this instance's HTTPS account-security page in the system browser. The browser
-signs in independently and checks the requested account ID before showing
-management. No session credential is included in the URL. Native sign-in sessions
-use the approved device name as their label in the sessions list.
+The server frontend calls `chatDesktop.openSecurityManagement(ticket)` to open
+an authenticated passkey management page in the system browser on Windows,
+macOS, and Linux. Main validates the 64-character hex ticket and constructs
+`/?security_management=1#ticket=<ticket>` from the requesting server window's
+configured HTTPS origin. The renderer cannot choose another destination.
+
+The server issues single-use tickets valid for 60 seconds. The page removes the
+fragment and exchanges it for a ten-minute credential limited to passkey
+management, held only in memory. Browser logins stay untouched; enrollment still
+requires password/passkey verification. Requires the matching chat server change.
+`chatDesktop.openSecuritySettings(userId)` remains available for older frontends.
+Native sign-in sessions use the approved device name in the sessions list.

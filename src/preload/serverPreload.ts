@@ -7,6 +7,7 @@ import { contextBridge, ipcRenderer } from "electron";
 // exposing ipcRenderer/Node directly to the renderer.
 contextBridge.exposeInMainWorld("chatDesktop", {
   isDesktopApp: true,
+  openSecurityManagement: (ticket: string) => ipcRenderer.invoke("account:open-security-management", ticket),
   openSecuritySettings: (userId: string) => ipcRenderer.invoke("account:open-security", userId),
   getDateTimePreferences: () => ipcRenderer.invoke("date-time:preferences"),
   // Supplied by the main process (see additionalArguments in windows.ts),
