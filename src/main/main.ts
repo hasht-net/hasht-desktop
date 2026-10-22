@@ -10,6 +10,7 @@ import {
   removeServer,
   renameServer,
   setActiveServer,
+  setServerAccount,
   type ServerEntry,
 } from "./serverStore";
 import { buildAppMenu } from "./appMenu";
@@ -248,6 +249,18 @@ app.whenReady().then(() => {
     const entry = listServers().find((s) => s.id === serverId);
     if (!entry) throw new Error("Unknown server.");
     return beginBrowserSignIn(entry);
+  });
+
+  // The page reports who is signed in, for the picker. Names only; anything
+  // that isn't a short string is dropped, since the page may be untrusted.
+  ipcMain.handle("account:set", (event, account: unknown) => {
+    const serverId = serverIdForWebContents(event.sender.id);
+    if (!serverId) return;
+    const field = (key: string) => {
+      const value = (account as Record<string, unknown> | null)?.[key];
+      return typeof value === "string" && value.length > 0 && value.length <= 64 ? value : null;
+    };
+    setServerAccount(serverId, field("username"), field("displayName"));
   });
 
   ipcMain.handle("native-auth:take", (event) => {

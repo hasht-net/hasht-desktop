@@ -247,7 +247,8 @@ export function openPickerWindow(): BrowserWindow {
     icon: process.platform === "linux"
       ? path.join(__dirname, "../../build/icon.png")
       : undefined,
-    backgroundColor: "#131417",
+    // --bg-rail in picker.html, so the window doesn't flash the other theme.
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#0e0f11" : "#e8eaec",
     webPreferences: {
       preload: path.join(__dirname, "../preload/pickerPreload.js"),
       contextIsolation: true,

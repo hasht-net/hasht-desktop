@@ -5,6 +5,9 @@ export interface ServerEntry {
   id: string;
   url: string;
   name: string; // defaults to the hostname if not given
+  /** Who the page last reported signed in here (`account:set`). Names only. */
+  username?: string | null;
+  displayName?: string | null;
 }
 
 export interface WindowBounds {
@@ -67,6 +70,16 @@ export function removeServer(id: string): void {
   }
   const { [id]: _removed, ...bounds } = store.get("windowBounds");
   store.set("windowBounds", bounds);
+}
+
+/** Nulls clear it: signed out. */
+export function setServerAccount(id: string, username: string | null, displayName: string | null): void {
+  store.set(
+    "servers",
+    listServers().map((s) =>
+      s.id === id ? { ...s, username, displayName: username ? displayName : null } : s,
+    ),
+  );
 }
 
 export function setActiveServer(id: string): void {
