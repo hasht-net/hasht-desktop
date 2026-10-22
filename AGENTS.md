@@ -21,11 +21,12 @@ train to keep in sync. Mirrors Mattermost Desktop / Rocket.Chat Desktop.
   over the `hasht://` deep-link scheme, registered/handled from `main.ts`. Only
   offered on macOS, where in-shell WebAuthn is broken (`needsBrowserSignIn` in
   `serverPreload.ts`); Windows/Linux use the normal in-page passkey flow.
-  `native-auth:start` returns the match code, which the server page shows the
-  user to check against the browser's.
+  Approving in the browser needs a passkey or password step-up; there is no
+  code to compare. `native-auth:start` still returns the deprecated
+  `match_code` for pages from older servers.
   `hasht://signin?server=<origin>` (the web app's "Sign in to the App") runs the
-  same flow from a browser: a dialog shows the host and match code first, https
-  origins only, and a new server is added only once sign-in succeeds.
+  same flow from a browser: a dialog confirms the host first, https origins
+  only, and a new server is added only once sign-in succeeds.
 - `src/main/updater.ts` — `electron-updater` wiring against the GitHub
   releases feed configured in `electron-builder.yml`'s `publish:` block.
 - `src/main/screenShare.ts` — display-media handler (Electron refuses

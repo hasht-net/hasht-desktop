@@ -30,15 +30,14 @@ export interface AuthResult {
   auth: unknown;
 }
 
-/** Opens the browser leg. Returns the match code for the app to show the user,
- *  so they can check it against the one the browser asks them to confirm.
+/** Opens the browser leg. With `confirm`, the browser opens only once it
+ *  resolves true — for a sign-in started by a `hasht://signin` link.
  *
- *  With `confirm`, the code is shown through it instead and the browser opens
- *  only once it resolves true — for a sign-in started by a `hasht://signin`
- *  link, where there's no app screen to show the code on. */
+ *  Still returns the server's `match_code`: pages from servers older than the
+ *  step-up change on Authorize show it. Newer pages ignore it. */
 export async function beginBrowserSignIn(
   entry: ServerEntry,
-  confirm?: (matchCode: string) => Promise<boolean>,
+  confirm?: () => Promise<boolean>,
 ): Promise<{ match_code: string }> {
   const verifier = randomBytes(32).toString("hex");
   const challenge = createHash("sha256").update(verifier).digest("hex");
@@ -68,15 +67,11 @@ export async function beginBrowserSignIn(
 
   const target = new URL(entry.url);
   target.searchParams.set("native_auth", request_id);
-  if (confirm) {
-    if (await confirm(match_code)) void shell.openExternal(target.toString());
-    else pending.delete(request_id);
+  if (confirm && !(await confirm())) {
+    pending.delete(request_id);
     return { match_code };
   }
-  // Return the code first so the app can show it, then open the browser a beat
-  // later — otherwise the browser window covers the code before it's read.
-  setTimeout(() => void shell.openExternal(target.toString()), 1500);
-
+  void shell.openExternal(target.toString());
   return { match_code };
 }
 
