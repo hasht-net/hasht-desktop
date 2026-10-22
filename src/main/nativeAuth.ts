@@ -47,7 +47,7 @@ export async function beginBrowserSignIn(
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ challenge, device_label: os.hostname() }),
+      body: JSON.stringify({ challenge, device_label: `Hasht on ${os.hostname()} (${os.platform()})` }),
     },
   );
   if (res.status === 404) {
@@ -106,11 +106,15 @@ export async function completeBrowserSignIn(
   }
 }
 
+export function cancelBrowserSignIn(serverId: string): void {
+  for (const [id, handoff] of pending) if (handoff.serverId === serverId) pending.delete(id);
+}
+
 async function redeem(
   requestId: string,
   code: string,
   handoff: PendingHandoff,
-): Promise<AuthResult> {
+): Promise<AuthResult | null> {
   const res = await net.fetch(
     new URL("/api/auth/native/exchange", handoff.serverUrl).toString(),
     {
@@ -129,9 +133,15 @@ async function redeem(
   if (!res.ok) {
     throw new Error("That sign-in link didn't work — try again from the app.");
   }
+  const auth = await res.json() as { token?: string };
+  if (pending.get(requestId) !== handoff) {
+    if (auth.token) await net.fetch(new URL("/api/auth/logout", handoff.serverUrl).toString(), {
+      method: "POST", headers: { Authorization: `Bearer ${auth.token}` }, redirect: "error",
+    }).catch(() => {});
+    return null;
+  }
   pending.delete(requestId);
-
-  return { serverId: handoff.serverId, auth: await res.json() };
+  return { serverId: handoff.serverId, auth };
 }
 
 /**

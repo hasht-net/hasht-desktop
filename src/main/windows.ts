@@ -335,3 +335,47 @@ function isSameOrigin(url: string, serverUrl: string): boolean {
     return false;
   }
 }
+
+/** Remove only this entry's partition; duplicate accounts have other partitions. */
+export async function forgetServerAccount(entry: ServerEntry): Promise<void> {
+  const partition = session.fromPartition(`persist:server-${entry.id}`);
+  const existing = getServerWindow(entry.id);
+  let cleanup: BrowserWindow | undefined;
+  let token: string | undefined;
+  let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    let contents = existing?.webContents;
+    if (!contents || new URL(contents.getURL()).origin !== new URL(entry.url).origin) {
+      cleanup = new BrowserWindow({ show: false, webPreferences: {
+        session: partition, contextIsolation: true, sandbox: true, nodeIntegration: false,
+      } });
+      cleanup.webContents.on("will-redirect", (event, url) => {
+        if (new URL(url).origin !== new URL(entry.url).origin) event.preventDefault();
+      });
+      await Promise.race([
+        cleanup.loadURL(new URL("/api/health", entry.url).toString()),
+        new Promise<never>((_, reject) => { cleanupTimer = setTimeout(() => reject(new Error("Server unavailable")), 10000); }),
+      ]);
+      contents = cleanup.webContents;
+    }
+    if (new URL(contents.getURL()).origin === new URL(entry.url).origin) {
+      const auth = await contents.executeJavaScript("localStorage.getItem('chat_auth')");
+      token = JSON.parse(auth || "null")?.token;
+    }
+  } catch { /* Local removal also works when the server cannot be reached. */ }
+  finally {
+    clearTimeout(cleanupTimer);
+    cleanup?.destroy();
+    closeServerWindow(entry.id);
+    await partition.clearStorageData();
+    await partition.clearCache();
+  }
+  if (token) {
+    try {
+      await partition.fetch(new URL("/api/auth/logout", entry.url).toString(), {
+        method: "POST", headers: { Authorization: `Bearer ${token}` }, redirect: "error",
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch { /* Revocation requires a reachable server; local auth is gone. */ }
+  }
+}

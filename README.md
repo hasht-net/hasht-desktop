@@ -86,3 +86,16 @@ theme-qualified PNG assets used by MSIX applications. Linux uses the same
 theme-neutral artwork; the [freedesktop icon specification](https://specifications.freedesktop.org/icon-theme/latest/)
 recommends PNG bitmap assets and neutral icons for the `hicolor` fallback theme.
 macOS uses its separate Icon Composer appearances and DMG ICNS asset.
+
+### Account removal and passkey settings
+
+Removing a picker entry cancels its pending sign-in, clears its dedicated browser
+partition, and revokes its saved session when the instance is reachable. Other
+saved accounts keep their own partitions and sessions. Remote logout is best
+effort when the instance is unavailable; local storage is still cleared.
+
+The server frontend can call `chatDesktop.openSecuritySettings(userId)` to open
+this instance's HTTPS account-security page in the system browser. The browser
+signs in independently and checks the requested account ID before showing
+management. No session credential is included in the URL. Native sign-in sessions
+use the approved device name as their label in the sessions list.

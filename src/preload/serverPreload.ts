@@ -7,6 +7,7 @@ import { contextBridge, ipcRenderer } from "electron";
 // exposing ipcRenderer/Node directly to the renderer.
 contextBridge.exposeInMainWorld("chatDesktop", {
   isDesktopApp: true,
+  openSecuritySettings: (userId: string) => ipcRenderer.invoke("account:open-security", userId),
   getDateTimePreferences: () => ipcRenderer.invoke("date-time:preferences"),
   // Supplied by the main process (see additionalArguments in windows.ts),
   // same as titlebarHeight() below — the page's About panel shows this
