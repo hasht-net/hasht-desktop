@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
@@ -19,7 +19,7 @@ import {
   activateServerWindows,
   openPickerWindow,
   closePickerWindow,
-  closeServerWindow,
+  forgetServerAccount,
   serverIdForWebContents,
   setQuitting,
   TITLEBAR_HEIGHT,
@@ -28,6 +28,7 @@ import { clearUnread, initTray, refreshTrayMenu, setUnreadCount } from "./tray";
 import {
   PROTOCOL,
   beginBrowserSignIn,
+  cancelBrowserSignIn,
   completeBrowserSignIn,
   deepLinkFromArgv,
   signInLinkOrigin,
@@ -229,11 +230,15 @@ app.whenReady().then(() => {
     connectToServer(id),
   );
 
-  ipcMain.handle("picker:remove-server", (_e, id: string) => {
-    closeServerWindow(id);
-    clearUnread(id);
+  ipcMain.handle("picker:remove-server", async (_e, id: string) => {
+    const entry = listServers().find(s => s.id === id);
+    if (!entry) return;
+    cancelBrowserSignIn(id);
+    pendingAuth.delete(id);
     removeServer(id);
+    clearUnread(id);
     refreshMenus();
+    await forgetServerAccount(entry);
   });
 
   ipcMain.handle("picker:rename-server", (_e, id: string, name: string) => {
@@ -249,6 +254,17 @@ app.whenReady().then(() => {
     const entry = listServers().find((s) => s.id === serverId);
     if (!entry) throw new Error("Unknown server.");
     return beginBrowserSignIn(entry);
+  });
+
+  ipcMain.handle("account:open-security", async (event, userId: unknown) => {
+    const serverId = serverIdForWebContents(event.sender.id);
+    const entry = listServers().find(s => s.id === serverId);
+    if (!entry || typeof userId !== "string" || !/^[0-9a-fA-F-]{36}$/.test(userId))
+      throw new Error("Unknown server or account.");
+    const target = new URL("/", entry.url);
+    if (target.protocol !== "https:") throw new Error("A secure server is required.");
+    target.searchParams.set("manage_security", userId);
+    await shell.openExternal(target.toString());
   });
 
   // The page reports who is signed in, for the picker. Names only; anything

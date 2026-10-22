@@ -21,8 +21,9 @@ function permissionHandlers(platform) {
     exports, URL, __dirname, process: { platform },
     require(name) {
       if (name === "electron") return {
-        BrowserWindow: Window, session: { fromPartition: () => serverSession }, shell: {},
+        app: { getVersion: () => "test" }, nativeTheme: { shouldUseDarkColors: true }, BrowserWindow: Window, session: { fromPartition: () => serverSession }, shell: {},
       };
+      if (name === "./serverStore") return { getWindowBounds() {}, setActiveServer() {}, setWindowBounds() {} };
       if (name === "./tray") return { clearUnread() {} };
       if (name === "./screenShare") return { enableScreenShare() {} };
       return require(name);
