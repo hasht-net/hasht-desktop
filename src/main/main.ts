@@ -256,6 +256,18 @@ app.whenReady().then(() => {
     return beginBrowserSignIn(entry);
   });
 
+  ipcMain.handle("account:open-security-management", async (event, ticket: unknown) => {
+    const serverId = serverIdForWebContents(event.sender.id);
+    const entry = listServers().find(s => s.id === serverId);
+    if (!entry || typeof ticket !== "string" || !/^[0-9a-f]{64}$/i.test(ticket))
+      throw new Error("Unknown server or invalid management ticket.");
+    const target = new URL("/", entry.url);
+    if (target.protocol !== "https:") throw new Error("A secure server is required.");
+    target.searchParams.set("security_management", "1");
+    target.hash = new URLSearchParams({ ticket }).toString();
+    await shell.openExternal(target.toString());
+  });
+
   ipcMain.handle("account:open-security", async (event, userId: unknown) => {
     const serverId = serverIdForWebContents(event.sender.id);
     const entry = listServers().find(s => s.id === serverId);
