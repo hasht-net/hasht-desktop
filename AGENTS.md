@@ -15,7 +15,8 @@ train to keep in sync. Mirrors Mattermost Desktop / Rocket.Chat Desktop.
   links open in the OS browser, not a new app window.
 - `src/main/serverStore.ts` — persisted server list (`electron-store`),
   never credentials — each server keeps its own auth (a bearer token in that
-  session partition's localStorage), isolated per partition.
+  session partition's localStorage), isolated per partition. The page reports
+  the signed-in username for the picker (`setAccount` → `account:set`).
 - `src/main/tray.ts` — tray icon/menu, per-server unread badge counts.
 - `src/main/nativeAuth.ts` — browser-handoff passkey sign-in (`/api/auth/native/*`)
   over the `hasht://` deep-link scheme, registered/handled from `main.ts`. Only
@@ -41,7 +42,9 @@ train to keep in sync. Mirrors Mattermost Desktop / Rocket.Chat Desktop.
 - `src/preload/pickerPreload.ts` + `src/renderer-picker/` — the welcome /
   onboarding screen (shown on first run and from the tray menu): pick Hasht
   Cloud (chat.hasht.net) or enter a self-hosted server, plus the list of
-  already-added servers.
+  already-added servers with their usernames ("Add a server" sits behind "+").
+  Mirrors hasht-app's picker, including hasht-chat's tokens and bundled
+  Manrope (`fonts/`, OFL); keep the three in step.
 - `electron-builder.yml` — mac (dmg/zip), Windows (nsis), Linux
   (AppImage/deb/rpm), each x64+arm64. Signing/notarization via env vars, not
   checked in.

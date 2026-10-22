@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld("chatDesktop", {
   // Browser runs the ceremony; page collects the session via takePendingAuth.
   startPasskeySignIn: () => ipcRenderer.invoke("native-auth:start"),
   takePendingAuth: () => ipcRenderer.invoke("native-auth:take"),
+  // Who is signed in, for the server picker. Names only, never a token.
+  setAccount: (account: { username: string | null; displayName: string | null }) =>
+    ipcRenderer.invoke("account:set", account),
   // Coarse system activity keeps mobile push quiet while the user works in
   // another app. Main checks the window and returns only active/idle/unknown.
   getSystemActivity: () => ipcRenderer.invoke("system-activity:state"),
