@@ -254,6 +254,7 @@ app.whenReady().then(() => {
     const serverId = serverIdForWebContents(event.sender.id);
     const entry = listServers().find((s) => s.id === serverId);
     if (!entry) throw new Error("Unknown server.");
+    cancelBrowserSignIn(entry.id);
     return beginBrowserSignIn(entry, undefined, browserSignInOptions(options));
   });
 
@@ -290,6 +291,11 @@ app.whenReady().then(() => {
       return typeof value === "string" && value.length > 0 && value.length <= 64 ? value : null;
     };
     setServerAccount(serverId, field("username"), field("displayName"));
+  });
+
+  ipcMain.handle("native-auth:cancel", event => {
+    const serverId = serverIdForWebContents(event.sender.id);
+    if (serverId) cancelBrowserSignIn(serverId);
   });
 
   ipcMain.handle("native-auth:take", (event) => {

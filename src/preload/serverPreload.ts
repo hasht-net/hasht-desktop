@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("chatDesktop", {
   needsBrowserSignIn: true,
   // Browser runs the ceremony; page collects the session via takePendingAuth.
   supportsBrowserRegistration: true,
+  cancelPasskeySignIn: () => ipcRenderer.invoke("native-auth:cancel"),
   startPasskeySignIn: (options?: unknown) => ipcRenderer.invoke("native-auth:start", options),
   takePendingAuth: () => ipcRenderer.invoke("native-auth:take"),
   // Who is signed in, for the server picker. Names only, never a token.
