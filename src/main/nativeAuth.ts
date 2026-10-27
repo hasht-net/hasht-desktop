@@ -18,6 +18,7 @@ interface PendingHandoff {
   serverUrl: string;
   verifier: string;
   path: string;
+  register: boolean;
 }
 
 const pending = new Map<string, PendingHandoff>();
@@ -66,7 +67,7 @@ export async function beginBrowserSignIn(
     request_id: string;
     match_code: string;
   };
-  pending.set(request_id, { serverId: entry.id, serverUrl: entry.url, verifier, path: options.path ?? "/" });
+  pending.set(request_id, { serverId: entry.id, serverUrl: entry.url, verifier, path: options.path ?? "/", register: options.register === true });
 
   const target = new URL(entry.url);
   target.pathname = "/";
@@ -158,7 +159,7 @@ async function redeem(
   }
   pending.delete(requestId);
 
-  return { serverId: handoff.serverId, auth: { ...auth, continuation_path: handoff.path } };
+  return { serverId: handoff.serverId, auth: { ...auth, continuation_path: handoff.path, registration_intent: handoff.register } };
 }
 
 /**
