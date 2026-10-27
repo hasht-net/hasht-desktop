@@ -1,3 +1,4 @@
+import { browserSignInOptions, continuationPath } from "./authContinuation";
 import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, shell } from "electron";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
@@ -81,7 +82,7 @@ async function handleDeepLink(link: string): Promise<void> {
     // open-url can fire before ready on a cold start.
     await app.whenReady();
     const origin = signInLinkOrigin(link);
-    if (origin) return await signInFromLink(origin);
+    if (origin) return await signInFromLink(origin, continuationPath(new URL(link).searchParams.get("path")) ?? "/");
 
     const result = await completeBrowserSignIn(link);
     if (!result) return;
@@ -110,9 +111,9 @@ async function handleDeepLink(link: string): Promise<void> {
 /**
  * "Sign in to the App" in a browser's settings: runs the usual browser handoff
  * for that server. The link can come from any page naming any host, so the
- * dialog naming the host is the user's say-so.
+ * dialog confirms the destination host before opening browser authorization.
  */
-async function signInFromLink(origin: string): Promise<void> {
+async function signInFromLink(origin: string, path: string): Promise<void> {
   const host = new URL(origin).host;
   const existing = listServers().find((s) => new URL(s.url).origin === origin);
   const entry = existing ?? {
@@ -129,11 +130,11 @@ async function signInFromLink(origin: string): Promise<void> {
       defaultId: 0,
       cancelId: 1,
       message: `Sign in to ${host}?`,
-      detail: "Your browser will open so you can sign in and approve.",
+      detail: "Your browser will open so you can choose an account and approve sign-in.",
     });
     if (response !== 0) provisionalServers.delete(entry.id);
     return response === 0;
-  });
+  }, { path, invite: path.match(/^\/invite\/([A-Za-z0-9]+)$/)?.[1] });
 }
 
 /** Best-effort: a server whose name can't be read is still fine to add. */
@@ -249,11 +250,11 @@ app.whenReady().then(() => {
   });
 
   // Started from the app's own login screen: hands off to the system browser.
-  ipcMain.handle("native-auth:start", async (event) => {
+  ipcMain.handle("native-auth:start", async (event, options: unknown) => {
     const serverId = serverIdForWebContents(event.sender.id);
     const entry = listServers().find((s) => s.id === serverId);
     if (!entry) throw new Error("Unknown server.");
-    return beginBrowserSignIn(entry);
+    return beginBrowserSignIn(entry, undefined, browserSignInOptions(options));
   });
 
   ipcMain.handle("account:open-security-management", async (event, ticket: unknown) => {
