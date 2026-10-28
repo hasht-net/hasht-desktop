@@ -37,7 +37,9 @@ train to keep in sync. Mirrors Mattermost Desktop / Rocket.Chat Desktop.
 - `src/preload/serverPreload.ts` — sandboxed bridge into the server's own
   page. Reads unread *channel* count (not message count) from
   `document.title`'s existing `(N) Title` format (see `hasht` repo's
-  `frontend/src/App.vue`) — no frontend changes needed. Keep this bridge
+  `frontend/src/App.vue`) — no frontend changes needed. Also wraps the page's
+  `Notification` so a real click raises the window, which the page's own
+  `window.focus()` can't do once it's hidden. Keep this bridge
   minimal; it's the only thing standing between an untrusted self-hosted
   server and the main process.
 - `src/preload/pickerPreload.ts` + `src/renderer-picker/` — the welcome /

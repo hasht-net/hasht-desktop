@@ -323,6 +323,17 @@ app.whenReady().then(() => {
     return null;
   });
 
+  // A page notification was clicked (see serverPreload.ts). The page then
+  // navigates to the message itself, but can't show a hidden window.
+  ipcMain.on("notification-clicked", (event) => {
+    if (!serverIdForWebContents(event.sender.id)) return;
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed()) return;
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  });
+
   // The page's window bar is --bg-rail, which depends on the theme. The
   // caption overlay is a native rectangle we paint separately; leave it at
   // the first-paint guess and it reads as a patch behind the buttons.
