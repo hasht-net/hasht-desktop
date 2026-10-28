@@ -19,9 +19,10 @@ train to keep in sync. Mirrors Mattermost Desktop / Rocket.Chat Desktop.
   the signed-in username for the picker (`setAccount` → `account:set`).
 - `src/main/tray.ts` — tray icon/menu, per-server unread badge counts.
 - `src/main/nativeAuth.ts` — browser-handoff passkey sign-in (`/api/auth/native/*`)
-  over the `hasht://` deep-link scheme, registered/handled from `main.ts`. Only
-  offered on macOS, where in-shell WebAuthn is broken (`needsBrowserSignIn` in
-  `serverPreload.ts`); Windows/Linux use the normal in-page passkey flow.
+  over the `hasht://` deep-link scheme, registered/handled from `main.ts`. Offered on
+  all platforms (`needsBrowserSignIn` in `serverPreload.ts`) so browser password
+  managers can supply passkeys. `appImageProtocol.ts` installs and verifies the
+  per-user Linux AppImage callback launcher using the persistent `APPIMAGE` path.
   Approving in the browser needs a passkey or password step-up; there is no
   code to compare. `native-auth:start` still returns the deprecated
   `match_code` for pages from older servers.

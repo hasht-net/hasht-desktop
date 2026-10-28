@@ -1,3 +1,4 @@
+import { registerAppImageProtocol } from "./appImageProtocol";
 import { browserSignInOptions, continuationPath } from "./authContinuation";
 import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, shell } from "electron";
 import { randomUUID } from "node:crypto";
@@ -187,7 +188,8 @@ const appMenuCallbacks = {
 };
 
 app.whenReady().then(() => {
-  registerProtocol();
+  try { registerProtocol(); }
+  catch (error) { console.error("Could not register browser callback handler:", error); }
   initTray(trayCallbacks);
   buildAppMenu(appMenuCallbacks);
   initAutoUpdater();
@@ -382,6 +384,10 @@ async function resolveServerUrl(rawUrl: string): Promise<string> {
 // Unpackaged builds run through the electron binary, so the scheme has to be
 // registered against it explicitly or the OS has nothing to hand the link to.
 function registerProtocol(): void {
+  if (process.platform === "linux" && process.env.APPIMAGE) {
+    registerAppImageProtocol();
+    return;
+  }
   if (process.defaultApp && process.argv.length >= 2) {
     app.setAsDefaultProtocolClient(PROTOCOL, process.execPath, [
       path.resolve(process.argv[1]),
