@@ -1,3 +1,4 @@
+import { registerAppImageProtocol } from "./appImageProtocol";
 import { net, shell } from "electron";
 import { createHash, randomBytes } from "node:crypto";
 import os from "node:os";
@@ -42,6 +43,10 @@ export async function beginBrowserSignIn(
   confirm?: () => Promise<boolean>,
   options: BrowserSignInOptions = {},
 ): Promise<{ match_code: string }> {
+  try { registerAppImageProtocol(); }
+  catch {
+    throw new Error("Could not register Hasht for browser sign-in. Ensure xdg-utils is installed and your desktop settings are writable, then try again, or install the Hasht .deb/.rpm package.");
+  }
   options = browserSignInOptions(options);
   const verifier = randomBytes(32).toString("hex");
   const challenge = createHash("sha256").update(verifier).digest("hex");

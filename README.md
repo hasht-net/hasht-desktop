@@ -106,3 +106,14 @@ management, held only in memory. Browser logins stay untouched; enrollment still
 requires password/passkey verification. Requires the matching chat server change.
 `chatDesktop.openSecuritySettings(userId)` remains available for older frontends.
 Native sign-in sessions use the approved device name in the sessions list.
+
+### AppImage browser sign-in
+
+On Linux, Hasht registers a per-user `hasht://` callback launcher on startup
+and checks it again before browser sign-in. This requires `xdg-utils` and a
+writable user applications directory (`$XDG_DATA_HOME/applications`, defaulting
+to `~/.local/share/applications`). No root access is needed. The hidden launcher
+`net.hasht.app.AppImage.desktop` points at the persistent AppImage file and is
+refreshed when you launch a moved or updated image. Launch the image from its
+new location before starting sign-in. Keep the app running during approval;
+restarting it discards the pending sign-in verifier.
