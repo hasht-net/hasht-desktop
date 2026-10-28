@@ -105,7 +105,9 @@ function check(): void {
 
 async function promptToInstall(version: string): Promise<void> {
   const { response } = await dialog.showMessageBox({
-    type: "info",
+    // Windows plays the system alert sound for any typed message box; this one
+    // pops up unprompted in the background, so keep it silent there.
+    type: process.platform === "win32" ? "none" : "info",
     buttons: ["Restart now", "Later"],
     defaultId: 0,
     cancelId: 1,
