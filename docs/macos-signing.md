@@ -24,7 +24,7 @@ Connect and distributed through TestFlight / the App Store.
 
 ## GitHub configuration
 
-In Hasht-net/hasht-desktop Settings > Secrets and variables > Actions, add:
+In hasht-net/hasht-desktop Settings > Secrets and variables > Actions, add:
 
 | Name | Value |
 | --- | --- |
@@ -43,16 +43,16 @@ configuration as TestFlight uploads (below); no app-specific password is needed.
 
 ## Build and upload
 
-Run Actions > Signed macOS > Run workflow with channel
-`testflight` or `direct`, and an existing release tag such as `v0.1.15-beta.4`.
-The checkout and version both come from that tag. Direct builds preserve the
-full version, including prerelease suffix, in package metadata and filenames.
-Both channels explicitly set numeric `CFBundleShortVersionString` and
-`CFBundleVersion` values; TestFlight package metadata also uses the numeric core. The run number
-provides a monotonically increasing CFBundleVersion for repeat uploads.
-Manual Signed macOS runs retain artifacts. The normal Release workflow signs
-and notarizes macOS DMG/ZIP files before publishing them alongside Windows/Linux
-installers using the same release tag. Missing signing credentials fail the job.
+Run Actions > Signed macOS > Run workflow with channel `testflight` or `direct`, and
+an existing release tag such as `v0.1.15-beta.4`. The checkout and version both come
+from that tag. Direct builds preserve the full version, including prerelease suffix,
+in package metadata and filenames. Both channels explicitly set numeric
+`CFBundleShortVersionString` and `CFBundleVersion` values; TestFlight package
+metadata also uses the numeric core. The workflow run number and attempt form
+`CFBundleVersion` for repeat uploads. Manual Signed macOS runs retain artifacts. The
+normal Release workflow signs and notarizes macOS DMG/ZIP files before publishing
+them alongside Windows/Linux installers using the same release tag. Missing signing
+credentials fail the job.
 
 For TestFlight, download the artifact and upload the signed universal .pkg
 using Apple's Transporter app. After processing in App Store Connect, complete
@@ -68,11 +68,12 @@ that signs successfully still needs Apple processing and runtime testing.
 ## Automatic prerelease uploads
 
 Publishing a GitHub **prerelease** triggers Signed macOS to build, validate and
-upload the universal MAS package to App Store Connect. This workflow must be
-included in the released commit. Tags such as `v0.1.2-beta.1` use numeric Apple
-version `0.1.2`; the workflow run number and attempt form the build number.
-Stable releases do not trigger this TestFlight job. Manual dispatch supports
-an `upload` checkbox, defaulting to false. Branch pushes only build artifacts.
+upload the universal MAS package to App Store Connect. This workflow must be included
+in the released commit. Tags such as `v0.1.2-beta.1` use numeric Apple version
+`0.1.2`; the workflow run number and attempt form the build number. Stable releases
+do not trigger this TestFlight job. Manual dispatch supports an `upload` checkbox,
+defaulting to false. The workflow has no push trigger; manual runs keep build
+artifacts.
 
 In App Store Connect > Users and Access > Integrations > App Store Connect API,
 create a **Team Key** with Developer access. Download the .p8 once and save its

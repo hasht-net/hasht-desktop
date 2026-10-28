@@ -13,9 +13,10 @@ fragments, and arbitrary URLs never cross this boundary. After PKCE exchange the
 pending auth object also includes `continuation_path`; the updated chat frontend
 adopts it as navigation before loading the destination. It contains no credential.
 
-The existing verifier and callback code boundaries and duplicate-exchange guard
-are unchanged. A request-matching `cancelled=1` callback lets browser recovery
-return to the app without exchanging a code.
+The shell retains the verifier in native code and guards against duplicate code
+exchanges. A request-matching `cancelled=1` callback lets browser recovery return to
+the app without exchanging a code.
 
-Validation: `npm run build`; `node --test tests/authContinuation.test.ts`.
-Requires the companion chat onboarding-continuation frontend for the new UI.
+To check changes, run `npm run build` and `node --test
+tests/authContinuation.test.ts`. Requires the companion chat onboarding-continuation
+frontend for the new UI.
