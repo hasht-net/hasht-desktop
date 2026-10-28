@@ -41,6 +41,27 @@ contextBridge.exposeInMainWorld("chatDesktop", {
     ipcRenderer.send("desktop-theme", colors),
 });
 
+// A notification's onclick calls window.focus(), which in Electron can't show
+// a window that was closed (hidden) to the tray — the page navigated to the
+// message in a window the user couldn't see. Wrap the page's Notification so a
+// real click also asks main to raise this window; isTrusted keeps the page
+// from raising itself with a synthetic click event.
+contextBridge.executeInMainWorld({
+  func: (raise: () => void) => {
+    const Native = window.Notification;
+    if (typeof Native !== "function") return;
+    window.Notification = class extends Native {
+      constructor(title: string, options?: NotificationOptions) {
+        super(title, options);
+        this.addEventListener("click", (event) => {
+          if (event.isTrusted) raise();
+        });
+      }
+    };
+  },
+  args: [() => ipcRenderer.send("notification-clicked")],
+});
+
 // The app already renders unread *channel* count (not message count) into
 // document.title as "(N) ..." (see frontend/src/App.vue) for the browser-tab
 // case. Reuse that signal for the tray badge/icon instead of asking the web
