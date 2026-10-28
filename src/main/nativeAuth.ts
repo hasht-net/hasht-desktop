@@ -3,6 +3,8 @@ import { createHash, randomBytes } from "node:crypto";
 import os from "node:os";
 import type { ServerEntry } from "./serverStore";
 
+import { browserSignInOptions, type BrowserSignInOptions } from "./authContinuation";
+
 export const PROTOCOL = "hasht";
 
 // Passkey sign-in handed off to the system browser, for platforms where an
@@ -15,6 +17,8 @@ interface PendingHandoff {
   serverId: string;
   serverUrl: string;
   verifier: string;
+  path: string;
+  register: boolean;
 }
 
 const pending = new Map<string, PendingHandoff>();
@@ -30,15 +34,15 @@ export interface AuthResult {
   auth: unknown;
 }
 
-/** Opens the browser leg. With `confirm`, the browser opens only once it
- *  resolves true — for a sign-in started by a `hasht://signin` link.
- *
- *  Still returns the server's `match_code`: pages from servers older than the
- *  step-up change on Authorize show it. Newer pages ignore it. */
+/** Opens the browser leg immediately. External sign-in links first confirm the
+ * destination host; approval and any step-up happen on the browser page.
+ * The deprecated match code remains in the return shape for older frontends. */
 export async function beginBrowserSignIn(
   entry: ServerEntry,
   confirm?: () => Promise<boolean>,
+  options: BrowserSignInOptions = {},
 ): Promise<{ match_code: string }> {
+  options = browserSignInOptions(options);
   const verifier = randomBytes(32).toString("hex");
   const challenge = createHash("sha256").update(verifier).digest("hex");
 
@@ -63,15 +67,23 @@ export async function beginBrowserSignIn(
     request_id: string;
     match_code: string;
   };
-  pending.set(request_id, { serverId: entry.id, serverUrl: entry.url, verifier });
+  pending.set(request_id, { serverId: entry.id, serverUrl: entry.url, verifier, path: options.path ?? "/", register: options.register === true });
 
   const target = new URL(entry.url);
+  target.pathname = "/";
+  target.search = "";
+  target.hash = "";
   target.searchParams.set("native_auth", request_id);
+  if (options.invite) target.searchParams.set("invite", options.invite);
+  if (options.register) target.searchParams.set("register", "1");
+  if (options.username) target.searchParams.set("username", options.username);
+  if (options.displayName) target.searchParams.set("display_name", options.displayName);
   if (confirm && !(await confirm())) {
     pending.delete(request_id);
     return { match_code };
   }
-  void shell.openExternal(target.toString());
+  await shell.openExternal(target.toString());
+
   return { match_code };
 }
 
@@ -93,7 +105,12 @@ export async function completeBrowserSignIn(
 
   const requestId = url.searchParams.get("request_id");
   const code = url.searchParams.get("code");
-  if (!requestId || !code) return null;
+  if (!requestId) return null;
+  if (url.searchParams.get("cancelled") === "1") {
+    pending.delete(requestId);
+    return null;
+  }
+  if (!code) return null;
 
   const handoff = pending.get(requestId);
   if (!handoff || redeeming.has(requestId)) return null;
@@ -141,7 +158,8 @@ async function redeem(
     return null;
   }
   pending.delete(requestId);
-  return { serverId: handoff.serverId, auth };
+
+  return { serverId: handoff.serverId, auth: { ...auth, continuation_path: handoff.path, registration_intent: handoff.register } };
 }
 
 /**

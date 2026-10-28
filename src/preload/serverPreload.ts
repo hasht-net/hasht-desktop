@@ -18,7 +18,9 @@ contextBridge.exposeInMainWorld("chatDesktop", {
   // so 1Password-style passkeys never show up in the in-page picker.
   needsBrowserSignIn: true,
   // Browser runs the ceremony; page collects the session via takePendingAuth.
-  startPasskeySignIn: () => ipcRenderer.invoke("native-auth:start"),
+  supportsBrowserRegistration: true,
+  cancelPasskeySignIn: () => ipcRenderer.invoke("native-auth:cancel"),
+  startPasskeySignIn: (options?: unknown) => ipcRenderer.invoke("native-auth:start", options),
   takePendingAuth: () => ipcRenderer.invoke("native-auth:take"),
   // Who is signed in, for the server picker. Names only, never a token.
   setAccount: (account: { username: string | null; displayName: string | null }) =>
