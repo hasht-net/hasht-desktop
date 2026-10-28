@@ -1,10 +1,9 @@
 # AGENTS.md
 
-Electron thin-shell desktop client for the self-hosted chat app (sibling repo:
-`hasht`, backend + Vue frontend). This repo embeds none of that frontend — it
-just points a `BrowserWindow` at a server URL the user provides. Updating the
-server's frontend updates every desktop client instantly; no separate release
-train to keep in sync. Mirrors Mattermost Desktop / Rocket.Chat Desktop.
+Electron desktop client for `hasht-net/hasht-chat` (Rust backend and Vue frontend).
+Each server window loads the frontend from the user's chosen instance. Frontend
+changes ship with the server; native features and bridge changes require a desktop
+release.
 
 ## Layout
 
@@ -36,7 +35,7 @@ train to keep in sync. Mirrors Mattermost Desktop / Rocket.Chat Desktop.
   screen-recording status/settings the page can't reach itself.
 - `src/preload/serverPreload.ts` — sandboxed bridge into the server's own
   page. Reads unread *channel* count (not message count) from
-  `document.title`'s existing `(N) Title` format (see `hasht` repo's
+  `document.title`'s existing `(N) Title` format (see `hasht-chat` repo's
   `frontend/src/App.vue`) — no frontend changes needed. Also wraps the page's
   `Notification` so a real click raises the window, which the page's own
   `window.focus()` can't do once it's hidden. Keep this bridge
@@ -62,8 +61,9 @@ train to keep in sync. Mirrors Mattermost Desktop / Rocket.Chat Desktop.
 - Build: `npm run build` (tsc). Dev: `npm run dev`. Package:
   `npm run dist:mac|win|linux`.
 
-## Not yet built
+## Releases
 
-Code signing / notarization secrets in CI. Deep link handling and
-`electron-updater` wiring are already built (`src/main/nativeAuth.ts`,
-`src/main/updater.ts`) — don't re-scaffold them.
+The release workflow requires macOS Developer ID signing and notarization. See
+`docs/macos-signing.md` for credentials and the separate TestFlight path. Windows
+signing is not configured in the release workflow. Deep links and `electron-updater`
+are implemented in `src/main/nativeAuth.ts` and `src/main/updater.ts`.
