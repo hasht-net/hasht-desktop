@@ -35,6 +35,13 @@ contextBridge.exposeInMainWorld("chatDesktop", {
   getScreenCaptureStatus: () => ipcRenderer.invoke("screen-capture:status"),
   openScreenCaptureSettings: () =>
     ipcRenderer.invoke("screen-capture:open-settings"),
+  // Where a share can carry the computer's audio, so the page offers the
+  // switch our pickers lack: loopback on Windows, and the macOS 15+ system
+  // picker. Electron's own picker path on older macOS never delivers audio.
+  systemAudioShare:
+    process.platform === "win32" ||
+    (process.platform === "darwin" &&
+      Number(process.getSystemVersion().split(".")[0]) >= 15),
   // Windows/Linux caption buttons. The page passes the bar color; main
   // checks it's a plain hex before handing it to the overlay.
   setWindowButtons: (colors: { color: string; symbolColor: string }) =>

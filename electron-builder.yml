@@ -46,6 +46,9 @@ mac:
     NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true
     NSMicrophoneUsageDescription: Hasht needs microphone access for voice chat.
     NSCameraUsageDescription: Hasht needs camera access for voice chat.
+    # Without it macOS hands over an ended audio track when a screen share
+    # asks for system audio, with no error.
+    NSAudioCaptureUsageDescription: Hasht shares your computer's audio when you share your screen in a call.
     # Required for passkeys signed in on a phone (caBLE talks over BLE).
     NSBluetoothAlwaysUsageDescription: Hasht uses Bluetooth to sign in with a passkey on a nearby device.
   # CI signs with Developer ID and notarizes through the Apple team API key.
