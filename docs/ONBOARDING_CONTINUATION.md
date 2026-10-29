@@ -1,7 +1,10 @@
 # Onboarding continuation
 
 The server frontend can pass `{ invite, register, username, displayName, path }`
-to `startPasskeySignIn`. The preload advertises `supportsBrowserRegistration` so
+to `startPasskeySignIn`, plus `email`, `birthday` (YYYY-MM-DD) and
+`birthdayVisibility` when registering. Those three go in the browser URL's
+fragment (`#email=…&birthday=…&birthday_visibility=…`, form-encoded), never the
+query, so they stay out of server and proxy logs. The preload advertises `supportsBrowserRegistration` so
 older desktop releases keep their password signup fallback. Main validates every
 field before using it. The browser opens immediately; deprecated match-code UI
 and its 1.5-second delay are removed.

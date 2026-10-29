@@ -4,7 +4,7 @@ import { createHash, randomBytes } from "node:crypto";
 import os from "node:os";
 import type { ServerEntry } from "./serverStore";
 
-import { browserSignInOptions, type BrowserSignInOptions } from "./authContinuation";
+import { browserSignInOptions, signupFragment, type BrowserSignInOptions } from "./authContinuation";
 
 export const PROTOCOL = "hasht";
 
@@ -83,6 +83,8 @@ export async function beginBrowserSignIn(
   if (options.register) target.searchParams.set("register", "1");
   if (options.username) target.searchParams.set("username", options.username);
   if (options.displayName) target.searchParams.set("display_name", options.displayName);
+  // Personal details stay out of the query, and so out of server logs.
+  if (options.register) target.hash = signupFragment(options);
   if (confirm && !(await confirm())) {
     pending.delete(request_id);
     return { match_code };
