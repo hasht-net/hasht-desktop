@@ -18,9 +18,9 @@ import {
 
 export function enableScreenShare(serverSession: Session): void {
   serverSession.setDisplayMediaRequestHandler(
-    async (_request, callback) => {
-      // Reached only where the system picker isn't available (macOS below 15,
-      // Linux). Handing over a screen we chose ourselves would be a page on an
+    async (request, callback) => {
+      // Reached only where the system picker isn't available (Windows, macOS
+      // below 15, Linux). Handing over a screen we chose ourselves would be a page on an
       // untrusted server getting the whole display without anyone agreeing to
       // it, so ask — a native dialog, since a real picker window is a bigger
       // piece of UI than this fallback warrants.
@@ -41,7 +41,18 @@ export function enableScreenShare(serverSession: Session): void {
       });
       // An empty callback is how this API says "denied"; the page sees the
       // same refusal it would get from a dismissed picker.
-      callback(response < sources.length ? { video: sources[response] } : {});
+      if (response >= sources.length) {
+        callback({});
+        return;
+      }
+      // The page's audio request is only a request: system audio arrives only
+      // if granted here, and Electron can capture it on Windows alone.
+      const video = sources[response];
+      callback(
+        request.audioRequested && process.platform === "win32"
+          ? { video, audio: "loopback" }
+          : { video },
+      );
     },
     { useSystemPicker: true },
   );
