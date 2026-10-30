@@ -12,6 +12,9 @@ release.
 - `src/main/windows.ts` — one `BrowserWindow` + isolated session partition
   (`persist:server-<id>`) per configured server; sandboxed preload; external
   links open in the OS browser, not a new app window.
+  Clipboard reads (composer Paste) prompt once per server, and only right
+  after a real context-menu gesture (`input-event`); the answer is stored in
+  `serverStore`.
 - `src/main/serverStore.ts` — persisted server list (`electron-store`),
   never credentials — each server keeps its own auth (a bearer token in that
   session partition's localStorage), isolated per partition. The page reports

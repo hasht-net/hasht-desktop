@@ -8,6 +8,8 @@ export interface ServerEntry {
   /** Who the page last reported signed in here (`account:set`). Names only. */
   username?: string | null;
   displayName?: string | null;
+  /** The user's one-time answer to this server reading the clipboard (Paste). */
+  clipboardRead?: "granted" | "denied";
 }
 
 export interface WindowBounds {
@@ -80,6 +82,14 @@ export function setServerAccount(id: string, username: string | null, displayNam
       s.id === id ? { ...s, username, displayName: username ? displayName : null } : s,
     ),
   );
+}
+
+export function getClipboardRead(id: string): ServerEntry["clipboardRead"] {
+  return listServers().find((s) => s.id === id)?.clipboardRead;
+}
+
+export function setClipboardRead(id: string, value: "granted" | "denied"): void {
+  store.set("servers", listServers().map((s) => (s.id === id ? { ...s, clipboardRead: value } : s)));
 }
 
 export function setActiveServer(id: string): void {

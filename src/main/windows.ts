@@ -1,6 +1,7 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   nativeTheme,
   screen,
   session,
@@ -8,7 +9,14 @@ import {
 } from "electron";
 import path from "node:path";
 import type { ServerEntry } from "./serverStore";
-import { getActiveServer, getWindowBounds, setActiveServer, setWindowBounds } from "./serverStore";
+import {
+  getActiveServer,
+  getClipboardRead,
+  getWindowBounds,
+  setActiveServer,
+  setClipboardRead,
+  setWindowBounds,
+} from "./serverStore";
 import { clearUnread } from "./tray";
 import { enableScreenShare } from "./screenShare";
 
@@ -30,6 +38,22 @@ const TITLEBAR_OVERLAY = {
 
 export function titleBarOverlayOptions(theme: "dark" | "light" = "dark") {
   return { ...TITLEBAR_OVERLAY[theme], height: TITLEBAR_HEIGHT };
+}
+
+// A clipboard read prompts only when the user opened a context menu shortly
+// before and has just clicked or pressed a key (picking Paste from it).
+const CONTEXT_MENU_WINDOW_MS = 30_000;
+const USER_INPUT_WINDOW_MS = 1000;
+const USER_INPUT_TYPES = new Set(["mouseDown", "mouseUp", "rawKeyDown", "keyDown", "keyUp"]);
+
+function opensContextMenu(input: Electron.InputEvent): boolean {
+  if (input.type === "mouseDown") {
+    const { button } = input as Electron.MouseInputEvent;
+    return button === "right" || (process.platform === "darwin" && button === "left" && !!input.modifiers?.includes("control"));
+  }
+  if (input.type !== "rawKeyDown") return false;
+  const { key } = input as Electron.KeyboardInputEvent & { key?: string };
+  return key === "ContextMenu" || (key === "F10" && !!input.modifiers?.includes("shift"));
 }
 
 const serverWindows = new Map<string, BrowserWindow>();
@@ -106,9 +130,14 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
 
   // Electron grants every permission request when no handler is installed, so
   // an untrusted server would get mic/cam/geolocation for free. Allow voice,
-  // notifications and video fullscreen only from the server's own origin.
+  // notifications, video fullscreen and clipboard writes only from the
+  // server's own origin. Clipboard reads ask the user (askClipboardRead).
   const serverSession = session.fromPartition(partition);
-  serverSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+  serverSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (permission === "clipboard-read") {
+      void askClipboardRead(contents, details.requestingUrl).then(callback);
+      return;
+    }
     callback(isPermitted(permission, details.requestingUrl, entry.url));
   });
 
@@ -116,8 +145,50 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
   // some getUserMedia/device-enumeration paths go through this synchronous
   // check instead, which also defaults to allow.
   serverSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
-    isPermitted(permission, requestingOrigin, entry.url),
+    permission === "clipboard-read"
+      ? getClipboardRead(entry.id) === "granted" && isSameOrigin(requestingOrigin, entry.url)
+      : isPermitted(permission, requestingOrigin, entry.url),
   );
+
+  // The composer's context-menu Paste reads the clipboard. Ask once, and only
+  // from that gesture, so a server can't raise the prompt on its own:
+  // input-event sees OS input, never events the page synthesizes.
+  let lastUserInputAt = 0;
+  let lastContextMenuAt = 0;
+  win.webContents.on("input-event", (_event, input) => {
+    if (USER_INPUT_TYPES.has(input.type)) lastUserInputAt = Date.now();
+    if (opensContextMenu(input)) lastContextMenuAt = Date.now();
+  });
+  let clipboardPrompt: Promise<boolean> | null = null;
+  async function askClipboardRead(contents: Electron.WebContents, requestingUrl: string): Promise<boolean> {
+    if (!isSameOrigin(requestingUrl, entry.url)) return false;
+    const answer = getClipboardRead(entry.id);
+    if (answer) return answer === "granted";
+    const now = Date.now();
+    if (
+      contents !== win.webContents ||
+      now - lastContextMenuAt > CONTEXT_MENU_WINDOW_MS ||
+      now - lastUserInputAt > USER_INPUT_WINDOW_MS
+    )
+      return false;
+    clipboardPrompt ??= dialog
+      .showMessageBox(win, {
+        type: "question",
+        buttons: ["Allow", "Don't Allow"],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Allow ${new URL(entry.url).host} to read your clipboard?`,
+        detail: "This lets Paste in the message box work. You won't be asked again for this server.",
+      })
+      .then(({ response }) => {
+        setClipboardRead(entry.id, response === 0 ? "granted" : "denied");
+        return response === 0;
+      })
+      .finally(() => {
+        clipboardPrompt = null;
+      });
+    return clipboardPrompt;
+  }
 
   // Without this `getDisplayMedia()` is refused before any picker appears.
   enableScreenShare(serverSession);
@@ -283,7 +354,8 @@ function isPermitted(
     permission !== "media" &&
     permission !== "notifications" &&
     permission !== "display-capture" &&
-    permission !== "fullscreen"
+    permission !== "fullscreen" &&
+    permission !== "clipboard-sanitized-write"
   )
     return false;
   return isSameOrigin(requestingUrl ?? "", serverUrl);
