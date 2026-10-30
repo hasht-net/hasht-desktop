@@ -5,6 +5,8 @@ export interface AppMenuCallbacks {
   onSwitchServer: (id: string) => void;
   onManageBackends: () => void;
   onCheckForUpdates: () => void;
+  readyUpdateVersion: () => string | null;
+  onInstallUpdate: () => void;
   onAbout: () => void;
   onQuit: () => void;
 }
@@ -16,6 +18,10 @@ export interface AppMenuCallbacks {
 export function buildAppMenu(callbacks: AppMenuCallbacks): void {
   const isMac = process.platform === "darwin";
   const servers: ServerEntry[] = listServers();
+
+  const updateItems: MenuItemConstructorOptions[] = callbacks.readyUpdateVersion()
+    ? [{ label: "Restart to Install Update", click: callbacks.onInstallUpdate }]
+    : [];
 
   const serverItems: MenuItemConstructorOptions[] = servers.map((s) => ({
     label: s.name,
@@ -34,6 +40,7 @@ export function buildAppMenu(callbacks: AppMenuCallbacks): void {
                 label: "Check for Updates…",
                 click: callbacks.onCheckForUpdates,
               },
+              ...updateItems,
               { type: "separator" as const },
               { role: "hide" as const },
               { role: "hideOthers" as const },
@@ -117,6 +124,7 @@ export function buildAppMenu(callbacks: AppMenuCallbacks): void {
                 label: "Check for Updates…",
                 click: callbacks.onCheckForUpdates,
               },
+              ...updateItems,
               { type: "separator" as const },
             ]),
         {

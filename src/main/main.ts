@@ -36,7 +36,13 @@ import {
   signInLinkOrigin,
 } from "./nativeAuth";
 import { getServerWindow } from "./windows";
-import { initAutoUpdater, checkForUpdatesFromMenu } from "./updater";
+import {
+  checkForUpdatesFromMenu,
+  getUpdateState,
+  initAutoUpdater,
+  installUpdate,
+  queueUpdate,
+} from "./updater";
 import { openScreenCaptureSettings, screenCaptureStatus } from "./screenShare";
 import { getDateTimePreferences } from "./dateTimePreferences";
 
@@ -173,9 +179,16 @@ function refreshMenus(): void {
   buildAppMenu(appMenuCallbacks);
 }
 
+const readyUpdateVersion = () => {
+  const { state, version } = getUpdateState();
+  return state === "ready" ? version : null;
+};
+
 const trayCallbacks = {
   onSwitchServer: connectToServer,
   onAddServer: () => openPickerWindow(),
+  readyUpdateVersion,
+  onInstallUpdate: installUpdate,
   onQuit: () => app.quit(),
 };
 
@@ -184,6 +197,8 @@ const appMenuCallbacks = {
   onManageBackends: () => openPickerWindow(),
   onAbout: showAbout,
   onCheckForUpdates: () => void checkForUpdatesFromMenu(),
+  readyUpdateVersion,
+  onInstallUpdate: installUpdate,
   onQuit: () => app.quit(),
 };
 
@@ -192,7 +207,7 @@ app.whenReady().then(() => {
   catch (error) { console.error("Could not register browser callback handler:", error); }
   initTray(trayCallbacks);
   buildAppMenu(appMenuCallbacks);
-  initAutoUpdater();
+  initAutoUpdater(refreshMenus);
 
   ipcMain.handle("date-time:preferences", (event) => {
     if (!serverIdForWebContents(event.sender.id) || event.senderFrame !== event.sender.mainFrame) {
@@ -306,6 +321,18 @@ app.whenReady().then(() => {
     const auth = pendingAuth.get(serverId) ?? null;
     pendingAuth.delete(serverId);
     return auth;
+  });
+
+  // The window bar's update button. A page can at most queue the published,
+  // signed update or restart into one that's already staged.
+  ipcMain.handle("update:state", (event) =>
+    serverIdForWebContents(event.sender.id) ? getUpdateState() : null,
+  );
+  ipcMain.handle("update:queue", (event) => {
+    if (serverIdForWebContents(event.sender.id)) queueUpdate();
+  });
+  ipcMain.handle("update:install", (event) => {
+    if (serverIdForWebContents(event.sender.id)) installUpdate();
   });
 
   // Screen recording is granted to the app by the OS, not to the page, so the

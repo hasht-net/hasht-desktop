@@ -3,6 +3,14 @@ import path from "node:path";
 import { getActiveServer, listServers, ServerEntry } from "./serverStore";
 import { getAllServerWindows, getServerWindow } from "./windows";
 
+interface TrayCallbacks {
+  onSwitchServer: (id: string) => void;
+  onAddServer: () => void;
+  readyUpdateVersion: () => string | null;
+  onInstallUpdate: () => void;
+  onQuit: () => void;
+}
+
 let tray: Tray | null = null;
 let unreadTotal = 0;
 const unreadByServer = new Map<string, number>();
@@ -40,11 +48,7 @@ function loadTrayIcon(name: string): NativeImage {
   return img.isEmpty() ? nativeImage.createEmpty() : img;
 }
 
-export function initTray(opts: {
-  onSwitchServer: (id: string) => void;
-  onAddServer: () => void;
-  onQuit: () => void;
-}): void {
+export function initTray(opts: TrayCallbacks): void {
   trayIcon = loadTrayIcon("tray-icon");
   trayIconUnread = loadTrayIcon("tray-icon-unread");
   tray = new Tray(trayIcon);
@@ -93,19 +97,11 @@ function applyUnreadTotal(): void {
   }
 }
 
-export function refreshTrayMenu(opts: {
-  onSwitchServer: (id: string) => void;
-  onAddServer: () => void;
-  onQuit: () => void;
-}): void {
+export function refreshTrayMenu(opts: TrayCallbacks): void {
   rebuildMenu(opts);
 }
 
-function rebuildMenu(opts: {
-  onSwitchServer: (id: string) => void;
-  onAddServer: () => void;
-  onQuit: () => void;
-}): void {
+function rebuildMenu(opts: TrayCallbacks): void {
   if (!tray) return;
   const servers: ServerEntry[] = listServers();
   const menu = Menu.buildFromTemplate([
@@ -124,6 +120,9 @@ function rebuildMenu(opts: {
     { type: "separator" as const },
     { label: "Manage Servers…", click: opts.onAddServer },
     { type: "separator" as const },
+    ...(opts.readyUpdateVersion()
+      ? [{ label: "Restart to Install Update", click: opts.onInstallUpdate }]
+      : []),
     { label: "Quit", click: opts.onQuit },
   ]);
   tray.setContextMenu(menu);

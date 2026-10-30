@@ -34,6 +34,9 @@ release.
   only, and a new server is added only once sign-in succeeds.
 - `src/main/updater.ts` — `electron-updater` wiring against the GitHub
   releases feed configured in `electron-builder.yml`'s `publish:` block.
+  Checks at launch and at most daily after; downloads only while the user
+  is away (idle, plugged in, no audio). The page's window bar shows the
+  state via `getUpdateState` / `queueUpdate` / `installUpdate`.
 - `src/main/screenShare.ts` — display-media handler (Electron refuses
   `getDisplayMedia` without one), preferring the OS picker; plus the macOS
   screen-recording status/settings the page can't reach itself.
