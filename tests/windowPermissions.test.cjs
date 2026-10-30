@@ -8,7 +8,8 @@ function permissionHandlers(platform, { dialogResponse = 0 } = {}) {
   let request;
   let check;
   let window;
-  const inputHandlers = [];
+  const ipcHandlers = [];
+  let now = 100_000;
   const prompts = [];
   const stored = {};
   const serverSession = {
@@ -20,7 +21,8 @@ function permissionHandlers(platform, { dialogResponse = 0 } = {}) {
       window = this;
       this.webContents = {
         id: 1,
-        on(event, handler) { if (event === "input-event") inputHandlers.push(handler); },
+        mainFrame: { url: "https://chat.example.com/" },
+        on() {},
         setWindowOpenHandler() {},
       };
     }
@@ -29,10 +31,11 @@ function permissionHandlers(platform, { dialogResponse = 0 } = {}) {
   }
   const exports = {};
   vm.runInNewContext(readFileSync(path.join(__dirname, "../dist/main/windows.js"), "utf8"), {
-    exports, URL, __dirname, process: { platform },
+    exports, URL, Date: { now: () => now }, __dirname, process: { platform },
     require(name) {
       if (name === "electron") return {
         app: { getVersion: () => "test" }, nativeTheme: { shouldUseDarkColors: true }, BrowserWindow: Window, session: { fromPartition: () => serverSession }, shell: {},
+        ipcMain: { on(channel, handler) { if (channel === "clipboard-paste-gesture") ipcHandlers.push(handler); } },
         dialog: { showMessageBox: async (_win, options) => { prompts.push(options.message); return { response: dialogResponse }; } },
       };
       if (name === "./serverStore") return {
@@ -46,14 +49,14 @@ function permissionHandlers(platform, { dialogResponse = 0 } = {}) {
     },
   });
   exports.openServerWindow({ id: "test", name: "Test", url: "https://chat.example.com" });
-  const userInput = (input) => inputHandlers.forEach((handler) => handler({}, { modifiers: [], ...input }));
-  const rightClickThenPaste = () => {
-    userInput({ type: "mouseDown", button: "right" });
-    userInput({ type: "mouseUp", button: "left" });
+  const pasteGesture = (senderFrame = window.webContents.mainFrame, sender = window.webContents) => {
+    const event = { senderFrame, sender };
+    ipcHandlers.forEach((handler) => handler(event));
+    return event.returnValue;
   };
   const requestClipboardRead = (contents = window.webContents, url = "https://chat.example.com/") =>
     new Promise((resolve) => request(contents, "clipboard-read", resolve, { requestingUrl: url }));
-  return { request, check, userInput, rightClickThenPaste, requestClipboardRead, prompts, stored };
+  return { request, check, pasteGesture, advance: (ms) => { now += ms; }, requestClipboardRead, prompts, stored };
 }
 
 for (const platform of ["darwin", "win32"]) {
@@ -82,19 +85,17 @@ for (const platform of ["darwin", "win32"]) {
   });
 }
 
-test("clipboard read is refused without a prompt unless the user is picking from a context menu", async () => {
-  const { userInput, requestClipboardRead, prompts, stored } = permissionHandlers("win32");
+test("clipboard read is refused without a trusted Paste signal", async () => {
+  const { requestClipboardRead, prompts, stored } = permissionHandlers("win32");
   assert.equal(await requestClipboardRead(), false);
-  userInput({ type: "rawKeyDown", key: "a" });
-  userInput({ type: "mouseUp", button: "left" });
   assert.equal(await requestClipboardRead(), false);
   assert.deepEqual(prompts, []);
   assert.deepEqual(stored, {});
 });
 
 test("clipboard read asks once from a context-menu Paste and remembers the answer", async () => {
-  const { check, rightClickThenPaste, requestClipboardRead, prompts, stored } = permissionHandlers("win32");
-  rightClickThenPaste();
+  const { check, pasteGesture, requestClipboardRead, prompts, stored } = permissionHandlers("win32");
+  pasteGesture();
   assert.equal(await requestClipboardRead(), true);
   assert.deepEqual(prompts, ["Allow chat.example.com to read your clipboard?"]);
   assert.deepEqual(stored, { test: "granted" });
@@ -105,11 +106,10 @@ test("clipboard read asks once from a context-menu Paste and remembers the answe
 });
 
 test("a denied clipboard read stays denied without asking again", async () => {
-  const { check, userInput, rightClickThenPaste, requestClipboardRead, prompts, stored } = permissionHandlers("win32", { dialogResponse: 1 });
-  userInput({ type: "rawKeyDown", key: "F10", modifiers: ["shift"] });
-  userInput({ type: "rawKeyDown", key: "Enter" });
+  const { check, pasteGesture, requestClipboardRead, prompts, stored } = permissionHandlers("win32", { dialogResponse: 1 });
+  pasteGesture();
   assert.equal(await requestClipboardRead(), false);
-  rightClickThenPaste();
+  pasteGesture();
   assert.equal(await requestClipboardRead(), false);
   assert.equal(prompts.length, 1);
   assert.deepEqual(stored, { test: "denied" });
@@ -117,17 +117,32 @@ test("a denied clipboard read stays denied without asking again", async () => {
 });
 
 test("clipboard read from another origin or webContents never prompts", async () => {
-  const { rightClickThenPaste, requestClipboardRead, prompts } = permissionHandlers("win32");
-  rightClickThenPaste();
+  const { pasteGesture, requestClipboardRead, prompts } = permissionHandlers("win32");
+  pasteGesture();
   assert.equal(await requestClipboardRead(undefined, "https://other.example.com/"), false);
   assert.equal(await requestClipboardRead({ id: 2 }), false);
   assert.deepEqual(prompts, []);
 });
 
-test("macOS control-click opens the context menu that can prompt", async () => {
-  const { userInput, requestClipboardRead, prompts } = permissionHandlers("darwin");
-  userInput({ type: "mouseDown", button: "left", modifiers: ["control"] });
-  userInput({ type: "mouseUp", button: "left" });
-  assert.equal(await requestClipboardRead(), true);
-  assert.equal(prompts.length, 1);
+test("a Paste signal from a subframe cannot unlock the prompt", async () => {
+  const { pasteGesture, requestClipboardRead, prompts } = permissionHandlers("darwin");
+  assert.equal(pasteGesture({ url: "https://chat.example.com/" }), false);
+  assert.equal(await requestClipboardRead(), false);
+  assert.deepEqual(prompts, []);
+});
+
+test("an expired Paste signal is consumed and cannot unlock a later request", async () => {
+  const { pasteGesture, advance, requestClipboardRead, prompts } = permissionHandlers("win32");
+  pasteGesture();
+  advance(1001);
+  assert.equal(await requestClipboardRead(), false);
+  assert.equal(await requestClipboardRead(), false);
+  assert.deepEqual(prompts, []);
+});
+
+test("an unregistered popup receives a reply without unlocking the server prompt", async () => {
+  const { pasteGesture, requestClipboardRead, prompts } = permissionHandlers("win32");
+  assert.equal(pasteGesture({ url: "https://chat.example.com/" }, { id: 2 }), false);
+  assert.equal(await requestClipboardRead(), false);
+  assert.deepEqual(prompts, []);
 });

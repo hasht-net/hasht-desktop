@@ -120,3 +120,31 @@ window.addEventListener("DOMContentLoaded", () => {
     characterData: true,
   });
 });
+
+// Observe browser-generated events in the isolated world. The page cannot call
+// this channel or turn a synthetic menu click into permission to show a prompt.
+// Keep the selectors in step with MarkdownComposer's clipboard menu.
+let clipboardMenuOpenedAt: number | null = null;
+window.addEventListener("contextmenu", (event) => {
+  clipboardMenuOpenedAt = event.isTrusted && event.target instanceof Element && event.target.closest(".md-composer")
+    ? Date.now() : null;
+}, true);
+window.addEventListener("pointerdown", (event) => {
+  if (event.isTrusted && !(event.target instanceof Element && event.target.closest(".composer-clipboard-menu"))) {
+    clipboardMenuOpenedAt = null;
+  }
+}, true);
+window.addEventListener("keydown", (event) => {
+  if (event.isTrusted && !["ArrowUp", "ArrowDown", "Home", "End", "Enter", " "].includes(event.key)) {
+    clipboardMenuOpenedAt = null;
+  }
+}, true);
+window.addEventListener("click", (event) => {
+  if (!event.isTrusted) return;
+  const openedAt = clipboardMenuOpenedAt;
+  clipboardMenuOpenedAt = null;
+  if (openedAt === null || Date.now() - openedAt > 30_000 || !(event.target instanceof Element)) return;
+  const button = event.target.closest<HTMLButtonElement>(".composer-clipboard-menu button[role=menuitem]");
+  if (!button || button.disabled || button.querySelector("span")?.textContent?.trim() !== "Paste") return;
+  ipcRenderer.sendSync("clipboard-paste-gesture");
+}, true);

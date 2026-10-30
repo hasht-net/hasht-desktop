@@ -2,6 +2,7 @@ import {
   app,
   BrowserWindow,
   dialog,
+  ipcMain,
   nativeTheme,
   screen,
   session,
@@ -40,21 +41,14 @@ export function titleBarOverlayOptions(theme: "dark" | "light" = "dark") {
   return { ...TITLEBAR_OVERLAY[theme], height: TITLEBAR_HEIGHT };
 }
 
-// A clipboard read prompts only when the user opened a context menu shortly
-// before and has just clicked or pressed a key (picking Paste from it).
-const CONTEXT_MENU_WINDOW_MS = 30_000;
-const USER_INPUT_WINDOW_MS = 1000;
-const USER_INPUT_TYPES = new Set(["mouseDown", "mouseUp", "rawKeyDown", "keyDown", "keyUp"]);
+// The isolated preload records a trusted click on the composer's Paste item.
+// Consume that signal when handling the first clipboard permission request.
+const PASTE_GESTURE_WINDOW_MS = 1000;
 
-function opensContextMenu(input: Electron.InputEvent): boolean {
-  if (input.type === "mouseDown") {
-    const { button } = input as Electron.MouseInputEvent;
-    return button === "right" || (process.platform === "darwin" && button === "left" && !!input.modifiers?.includes("control"));
-  }
-  if (input.type !== "rawKeyDown") return false;
-  const { key } = input as Electron.KeyboardInputEvent & { key?: string };
-  return key === "ContextMenu" || (key === "F10" && !!input.modifiers?.includes("shift"));
-}
+// Reply to every synchronous signal, including signals from unregistered popup
+// windows that inherit the preload, so those renderers cannot hang.
+const clipboardGestureHandlers = new Map<number, (event: Electron.IpcMainEvent) => void>();
+let clipboardGestureListenerInstalled = false;
 
 const serverWindows = new Map<string, BrowserWindow>();
 const serverIdByWebContentsId = new Map<number, string>();
@@ -150,27 +144,32 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
       : isPermitted(permission, requestingOrigin, entry.url),
   );
 
-  // The composer's context-menu Paste reads the clipboard. Ask once, and only
-  // from that gesture, so a server can't raise the prompt on its own:
-  // input-event sees OS input, never events the page synthesizes.
-  let lastUserInputAt = 0;
-  let lastContextMenuAt = 0;
-  win.webContents.on("input-event", (_event, input) => {
-    if (USER_INPUT_TYPES.has(input.type)) lastUserInputAt = Date.now();
-    if (opensContextMenu(input)) lastContextMenuAt = Date.now();
+  // No page API exposes this channel. The preload sends synchronously so the
+  // signal arrives before the page's click handler requests clipboard access.
+  let pasteGestureAt: number | null = null;
+  if (!clipboardGestureListenerInstalled) {
+    ipcMain.on("clipboard-paste-gesture", (event) => {
+      event.returnValue = false;
+      clipboardGestureHandlers.get(event.sender.id)?.(event);
+    });
+    clipboardGestureListenerInstalled = true;
+  }
+  clipboardGestureHandlers.set(win.webContents.id, (event) => {
+    if (event.senderFrame !== win.webContents.mainFrame) return;
+    if (!isSameOrigin(event.senderFrame.url, entry.url)) return;
+    pasteGestureAt = Date.now();
+    event.returnValue = true;
   });
   let clipboardPrompt: Promise<boolean> | null = null;
   async function askClipboardRead(contents: Electron.WebContents, requestingUrl: string): Promise<boolean> {
     if (!isSameOrigin(requestingUrl, entry.url)) return false;
+    if (contents !== win.webContents) return false;
     const answer = getClipboardRead(entry.id);
     if (answer) return answer === "granted";
-    const now = Date.now();
-    if (
-      contents !== win.webContents ||
-      now - lastContextMenuAt > CONTEXT_MENU_WINDOW_MS ||
-      now - lastUserInputAt > USER_INPUT_WINDOW_MS
-    )
-      return false;
+    if (clipboardPrompt) return clipboardPrompt;
+    const gestureAt = pasteGestureAt;
+    pasteGestureAt = null;
+    if (gestureAt === null || Date.now() - gestureAt > PASTE_GESTURE_WINDOW_MS) return false;
     clipboardPrompt ??= dialog
       .showMessageBox(win, {
         type: "question",
@@ -238,6 +237,7 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
     serverWindows.delete(entry.id);
     focusedServerIds.delete(entry.id);
     serverIdByWebContentsId.delete(webContentsId);
+    clipboardGestureHandlers.delete(webContentsId);
   });
 
   // 'resized'/'moved' fire once the user lets go, not on every intermediate
