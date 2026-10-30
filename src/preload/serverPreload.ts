@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld("chatDesktop", {
   // checks it's a plain hex before handing it to the overlay.
   setWindowButtons: (colors: { color: string; symbolColor: string }) =>
     ipcRenderer.send("desktop-theme", colors),
+  // The window bar's update button. Changes arrive as a hasht:update-state
+  // event, after which the page reads the state again.
+  getUpdateState: () => ipcRenderer.invoke("update:state"),
+  queueUpdate: () => ipcRenderer.invoke("update:queue"),
+  installUpdate: () => ipcRenderer.invoke("update:install"),
 });
 
 // A notification's onclick calls window.focus(), which in Electron can't show
@@ -98,6 +103,9 @@ function appVersion(): string {
 // Relayed as a DOM event since contextBridge can't push into the page directly.
 ipcRenderer.on("show-about", () => {
   window.dispatchEvent(new Event("hasht:show-about"));
+});
+ipcRenderer.on("update-state", () => {
+  window.dispatchEvent(new Event("hasht:update-state"));
 });
 
 // Tells the page it is running frameless so it can reserve room for the
