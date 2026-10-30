@@ -12,6 +12,10 @@ release.
 - `src/main/windows.ts` — one `BrowserWindow` + isolated session partition
   (`persist:server-<id>`) per configured server; sandboxed preload; external
   links open in the OS browser, not a new app window.
+  Clipboard reads (composer Paste) prompt once per server, and only right
+  after a trusted click on the composer's Paste menu item, observed by the
+  isolated preload; the answer is stored in `serverStore`. Keep the preload
+  selectors in step with the server's `MarkdownComposer` clipboard menu.
 - `src/main/serverStore.ts` — persisted server list (`electron-store`),
   never credentials — each server keeps its own auth (a bearer token in that
   session partition's localStorage), isolated per partition. The page reports

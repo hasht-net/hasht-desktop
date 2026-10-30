@@ -1,6 +1,8 @@
 import {
   app,
   BrowserWindow,
+  dialog,
+  ipcMain,
   nativeTheme,
   screen,
   session,
@@ -8,7 +10,14 @@ import {
 } from "electron";
 import path from "node:path";
 import type { ServerEntry } from "./serverStore";
-import { getActiveServer, getWindowBounds, setActiveServer, setWindowBounds } from "./serverStore";
+import {
+  getActiveServer,
+  getClipboardRead,
+  getWindowBounds,
+  setActiveServer,
+  setClipboardRead,
+  setWindowBounds,
+} from "./serverStore";
 import { clearUnread } from "./tray";
 import { enableScreenShare } from "./screenShare";
 
@@ -31,6 +40,15 @@ const TITLEBAR_OVERLAY = {
 export function titleBarOverlayOptions(theme: "dark" | "light" = "dark") {
   return { ...TITLEBAR_OVERLAY[theme], height: TITLEBAR_HEIGHT };
 }
+
+// The isolated preload records a trusted click on the composer's Paste item.
+// Consume that signal when handling the first clipboard permission request.
+const PASTE_GESTURE_WINDOW_MS = 1000;
+
+// Reply to every synchronous signal, including signals from unregistered popup
+// windows that inherit the preload, so those renderers cannot hang.
+const clipboardGestureHandlers = new Map<number, (event: Electron.IpcMainEvent) => void>();
+let clipboardGestureListenerInstalled = false;
 
 const serverWindows = new Map<string, BrowserWindow>();
 const serverIdByWebContentsId = new Map<number, string>();
@@ -106,9 +124,14 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
 
   // Electron grants every permission request when no handler is installed, so
   // an untrusted server would get mic/cam/geolocation for free. Allow voice,
-  // notifications and video fullscreen only from the server's own origin.
+  // notifications, video fullscreen and clipboard writes only from the
+  // server's own origin. Clipboard reads ask the user (askClipboardRead).
   const serverSession = session.fromPartition(partition);
-  serverSession.setPermissionRequestHandler((_contents, permission, callback, details) => {
+  serverSession.setPermissionRequestHandler((contents, permission, callback, details) => {
+    if (permission === "clipboard-read") {
+      void askClipboardRead(contents, details.requestingUrl).then(callback);
+      return;
+    }
     callback(isPermitted(permission, details.requestingUrl, entry.url));
   });
 
@@ -116,8 +139,55 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
   // some getUserMedia/device-enumeration paths go through this synchronous
   // check instead, which also defaults to allow.
   serverSession.setPermissionCheckHandler((_contents, permission, requestingOrigin) =>
-    isPermitted(permission, requestingOrigin, entry.url),
+    permission === "clipboard-read"
+      ? getClipboardRead(entry.id) === "granted" && isSameOrigin(requestingOrigin, entry.url)
+      : isPermitted(permission, requestingOrigin, entry.url),
   );
+
+  // No page API exposes this channel. The preload sends synchronously so the
+  // signal arrives before the page's click handler requests clipboard access.
+  let pasteGestureAt: number | null = null;
+  if (!clipboardGestureListenerInstalled) {
+    ipcMain.on("clipboard-paste-gesture", (event) => {
+      event.returnValue = false;
+      clipboardGestureHandlers.get(event.sender.id)?.(event);
+    });
+    clipboardGestureListenerInstalled = true;
+  }
+  clipboardGestureHandlers.set(win.webContents.id, (event) => {
+    if (event.senderFrame !== win.webContents.mainFrame) return;
+    if (!isSameOrigin(event.senderFrame.url, entry.url)) return;
+    pasteGestureAt = Date.now();
+    event.returnValue = true;
+  });
+  let clipboardPrompt: Promise<boolean> | null = null;
+  async function askClipboardRead(contents: Electron.WebContents, requestingUrl: string): Promise<boolean> {
+    if (!isSameOrigin(requestingUrl, entry.url)) return false;
+    if (contents !== win.webContents) return false;
+    const answer = getClipboardRead(entry.id);
+    if (answer) return answer === "granted";
+    if (clipboardPrompt) return clipboardPrompt;
+    const gestureAt = pasteGestureAt;
+    pasteGestureAt = null;
+    if (gestureAt === null || Date.now() - gestureAt > PASTE_GESTURE_WINDOW_MS) return false;
+    clipboardPrompt ??= dialog
+      .showMessageBox(win, {
+        type: "question",
+        buttons: ["Allow", "Don't Allow"],
+        defaultId: 0,
+        cancelId: 1,
+        message: `Allow ${new URL(entry.url).host} to read your clipboard?`,
+        detail: "This lets Paste in the message box work. You won't be asked again for this server.",
+      })
+      .then(({ response }) => {
+        setClipboardRead(entry.id, response === 0 ? "granted" : "denied");
+        return response === 0;
+      })
+      .finally(() => {
+        clipboardPrompt = null;
+      });
+    return clipboardPrompt;
+  }
 
   // Without this `getDisplayMedia()` is refused before any picker appears.
   enableScreenShare(serverSession);
@@ -167,6 +237,7 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
     serverWindows.delete(entry.id);
     focusedServerIds.delete(entry.id);
     serverIdByWebContentsId.delete(webContentsId);
+    clipboardGestureHandlers.delete(webContentsId);
   });
 
   // 'resized'/'moved' fire once the user lets go, not on every intermediate
@@ -283,7 +354,8 @@ function isPermitted(
     permission !== "media" &&
     permission !== "notifications" &&
     permission !== "display-capture" &&
-    permission !== "fullscreen"
+    permission !== "fullscreen" &&
+    permission !== "clipboard-sanitized-write"
   )
     return false;
   return isSameOrigin(requestingUrl ?? "", serverUrl);
