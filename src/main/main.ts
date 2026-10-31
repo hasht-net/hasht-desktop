@@ -1,6 +1,6 @@
 import { registerAppImageProtocol } from "./appImageProtocol";
 import { browserSignInOptions, continuationPath } from "./authContinuation";
-import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, shell } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, net, powerMonitor, shell, webContents } from "electron";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import {
@@ -45,6 +45,7 @@ import {
 } from "./updater";
 import { openScreenCaptureSettings, screenCaptureStatus } from "./screenShare";
 import { getDateTimePreferences } from "./dateTimePreferences";
+import { cancelStepUp, completeStepUp, waitForStepUp } from "./securityStepUp";
 
 // App Sandbox does not support Electron’s single-instance lock.
 if (!process.mas && !app.requestSingleInstanceLock()) {
@@ -88,6 +89,17 @@ async function handleDeepLink(link: string): Promise<void> {
   try {
     // open-url can fire before ready on a cold start.
     await app.whenReady();
+    const stepUp = completeStepUp(link);
+    if (stepUp) {
+      const contents = stepUp.owner === null ? undefined : webContents.fromId(stepUp.owner);
+      const win = contents && BrowserWindow.fromWebContents(contents);
+      if (win) {
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      }
+      return;
+    }
     const origin = signInLinkOrigin(link);
     if (origin) return await signInFromLink(origin, continuationPath(new URL(link).searchParams.get("path")) ?? "/");
 
@@ -275,8 +287,8 @@ app.whenReady().then(() => {
     return beginBrowserSignIn(entry, undefined, browserSignInOptions(options));
   });
 
-  ipcMain.handle("account:open-security-management", async (event, ticket: unknown) => {
-    const serverId = serverIdForWebContents(event.sender.id);
+  const securityManagementUrl = (senderId: number, ticket: unknown): string => {
+    const serverId = serverIdForWebContents(senderId);
     const entry = listServers().find(s => s.id === serverId);
     if (!entry || typeof ticket !== "string" || !/^[0-9a-f]{64}$/i.test(ticket))
       throw new Error("Unknown server or invalid management ticket.");
@@ -284,8 +296,26 @@ app.whenReady().then(() => {
     if (target.protocol !== "https:") throw new Error("A secure server is required.");
     target.searchParams.set("security_management", "1");
     target.hash = new URLSearchParams({ ticket }).toString();
-    await shell.openExternal(target.toString());
+    return target.toString();
+  };
+
+  ipcMain.handle("account:open-security-management", async (event, ticket: unknown) => {
+    await shell.openExternal(securityManagementUrl(event.sender.id, ticket));
   });
+
+  // The browser checks the passkey and returns over hasht://step-up; the page
+  // gets the code and confirms it with its own session.
+  ipcMain.handle("account:run-security-step-up", async (event, ticket: unknown) => {
+    const target = securityManagementUrl(event.sender.id, ticket);
+    try { registerAppImageProtocol(); }
+    catch { throw new Error("Could not register Hasht to receive the browser's reply. Check that xdg-utils is installed, then try again."); }
+    const result = waitForStepUp(event.sender.id);
+    try { await shell.openExternal(target); }
+    catch (err) { cancelStepUp(event.sender.id); throw err; }
+    return result;
+  });
+
+  ipcMain.handle("account:cancel-security-step-up", (event) => cancelStepUp(event.sender.id));
 
   ipcMain.handle("account:open-security", async (event, userId: unknown) => {
     const serverId = serverIdForWebContents(event.sender.id);

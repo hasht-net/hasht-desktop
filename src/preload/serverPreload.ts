@@ -8,6 +8,9 @@ import { contextBridge, ipcRenderer } from "electron";
 contextBridge.exposeInMainWorld("chatDesktop", {
   isDesktopApp: true,
   openSecurityManagement: (ticket: string) => ipcRenderer.invoke("account:open-security-management", ticket),
+  // Resolves with the code from the browser's hasht://step-up callback, or null.
+  runSecurityStepUp: (ticket: string) => ipcRenderer.invoke("account:run-security-step-up", ticket),
+  cancelSecurityStepUp: () => ipcRenderer.invoke("account:cancel-security-step-up"),
   openSecuritySettings: (userId: string) => ipcRenderer.invoke("account:open-security", userId),
   getDateTimePreferences: () => ipcRenderer.invoke("date-time:preferences"),
   // Supplied by the main process (see additionalArguments in windows.ts),
