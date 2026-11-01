@@ -199,6 +199,7 @@ const readyUpdateVersion = () => {
 const trayCallbacks = {
   onSwitchServer: connectToServer,
   onAddServer: () => openPickerWindow(),
+  onCheckForUpdates: () => void checkForUpdatesFromMenu(),
   readyUpdateVersion,
   onInstallUpdate: installUpdate,
   onQuit: () => app.quit(),
@@ -353,7 +354,7 @@ app.whenReady().then(() => {
     return auth;
   });
 
-  // The window bar's update button. A page can at most queue the published,
+  // The window bar's update button. A page can at most download the published,
   // signed update or restart into one that's already staged.
   ipcMain.handle("update:state", (event) =>
     serverIdForWebContents(event.sender.id) ? getUpdateState() : null,
