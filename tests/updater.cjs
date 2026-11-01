@@ -101,7 +101,9 @@ test('a queued update downloads only once the user is away', async () => {
   app.init();
   await app.launch();
   app.updater.emit('update-available', { version: '0.1.16' });
-  app.queueUpdate();
+  await app.checkForUpdatesFromMenu();
+  app.updater.emit('update-available', { version: '0.1.16' });
+  await settle();
   assert.equal(app.state(), 'queued');
   assert.equal(app.saved().queued, true);
 
@@ -110,7 +112,7 @@ test('a queued update downloads only once the user is away', async () => {
 
   app.env.idle = 'locked';
   await app.tick();
-  assert.deepEqual(app.calls, ['check', 'download']);
+  assert.equal(app.calls.filter(call => call === 'download').length, 1);
   assert.equal(app.state(), 'downloading');
   app.updater.emit('update-downloaded', { version: '0.1.16' });
   assert.equal(app.state(), 'ready');
@@ -121,7 +123,9 @@ test('locking the screen runs the same away check immediately', async () => {
   app.init();
   await app.launch();
   app.updater.emit('update-available', { version: '0.1.16' });
-  app.queueUpdate();
+  await app.checkForUpdatesFromMenu();
+  app.updater.emit('update-available', { version: '0.1.16' });
+  await settle();
   app.power.emit('lock-screen');
   await settle();
   assert.ok(app.calls.includes('download'));
@@ -133,7 +137,9 @@ test('offline, battery or audible windows hold the download', async () => {
     app.init();
     await app.launch();
     app.updater.emit('update-available', { version: '0.1.16' });
-    app.queueUpdate();
+    await app.checkForUpdatesFromMenu();
+    app.updater.emit('update-available', { version: '0.1.16' });
+    await settle();
     await app.tick();
     assert.equal(app.calls.includes('download'), false, JSON.stringify(blocker));
   }
@@ -245,4 +251,34 @@ test('development and package-manager installs do not auto-update; AppImage does
   const app = load({ platform: 'linux', appImage: true });
   app.init();
   assert.equal(app.timers.length, 2);
+});
+
+for (const platform of ['win32', 'darwin']) {
+  test(`${platform}: window bar downloads immediately while active, on battery and audible`, async () => {
+    const app = load({ platform, idle: 'active', battery: true, audible: true });
+    app.init();
+    app.queueUpdate();
+    assert.deepEqual(app.calls, []);
+    app.updater.emit('update-available', { version: '0.1.16' });
+    app.queueUpdate();
+    app.queueUpdate();
+    assert.equal(app.state(), 'downloading');
+    assert.deepEqual(app.calls, ['download']);
+    app.updater.emit('update-downloaded', { version: '0.1.16' });
+    assert.equal(app.state(), 'ready');
+  });
+}
+
+test('window bar starts an already queued update and permits retry after failure', async () => {
+  const app = load({ idle: 'active', saved: { lastCheckAt: 0, availableSince: 1, queued: true } });
+  app.init();
+  app.updater.emit('update-available', { version: '0.1.16' });
+  app.updater.downloadUpdate = async () => { throw Error('network'); };
+  app.queueUpdate();
+  await settle();
+  assert.equal(app.state(), 'queued');
+  app.updater.downloadUpdate = async () => app.calls.push('download');
+  app.queueUpdate();
+  assert.equal(app.state(), 'downloading');
+  assert.deepEqual(app.calls, ['download']);
 });

@@ -6,6 +6,7 @@ import { getAllServerWindows, getServerWindow } from "./windows";
 interface TrayCallbacks {
   onSwitchServer: (id: string) => void;
   onAddServer: () => void;
+  onCheckForUpdates: () => void;
   readyUpdateVersion: () => string | null;
   onInstallUpdate: () => void;
   onQuit: () => void;
@@ -120,6 +121,7 @@ function rebuildMenu(opts: TrayCallbacks): void {
     { type: "separator" as const },
     { label: "Manage Servers…", click: opts.onAddServer },
     { type: "separator" as const },
+    { label: "Check for Updates…", click: opts.onCheckForUpdates },
     ...(opts.readyUpdateVersion()
       ? [{ label: "Restart to Install Update", click: opts.onInstallUpdate }]
       : []),
