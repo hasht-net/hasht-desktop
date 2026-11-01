@@ -6,9 +6,9 @@ import { getAllServerWindows, setQuitting } from "./windows";
 export type UpdateState = "none" | "available" | "queued" | "downloading" | "ready";
 
 // Downloading, verifying and staging a ~130 MB update slows the machine
-// noticeably (Windows especially), so nothing heavy runs while someone is
-// using it. Launch always checks; after that, at most one check a day, and
-// downloads wait until the user steps away.
+// noticeably (Windows especially), so automatic downloads wait until the user
+// steps away. Explicit download requests start immediately. Launch always
+// checks; after that, at most one check a day.
 const LAUNCH_CHECK_DELAY_MS = 60 * 1000;
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 // Downloads normally wait for the user to opt in from the window bar. One they
@@ -78,8 +78,14 @@ export function getUpdateState(): { state: UpdateState; version: string | null }
   return { state, version };
 }
 
-/** The window bar's "Update available": download on the next idle window. */
+/** Legacy bridge name: clicking the window bar requests an immediate download. */
 export function queueUpdate(): void {
+  if (state !== "available" && state !== "queued") return;
+  download();
+}
+
+/** Only the explicit "Download When Away" menu choice defers a download. */
+function queueUpdateWhenAway(): void {
   if (state !== "available") return;
   store.set("updater", { ...persisted(), queued: true });
   setState("queued");
@@ -152,7 +158,7 @@ export async function checkForUpdatesFromMenu(): Promise<void> {
       detail: "Downloading can slow your computer for a few minutes, so by default it waits until you step away.",
     });
     if (response === 1) download();
-    else queueUpdate();
+    else queueUpdateWhenAway();
   };
   const onError = (err: Error) => {
     cleanup();
