@@ -85,8 +85,11 @@ password or passkey verification. This does not change the browser's login.
 ### AppImage browser sign-in
 
 On Linux, Hasht registers a per-user `hasht://` callback launcher on startup and
-checks it before browser sign-in. This requires `xdg-utils` and a writable
-`$XDG_DATA_HOME/applications` (default `~/.local/share/applications`).
+checks it before browser sign-in. It writes the launcher to
+`$XDG_DATA_HOME/applications` (default `~/.local/share/applications`) and the
+default handler to `$XDG_CONFIG_HOME/mimeapps.list` (default `~/.config`), so
+`xdg-utils` is not required. When `xdg-mime` is installed, Hasht uses it to
+confirm that no desktop-specific setting overrides the handler.
 
 `net.hasht.app.AppImage.desktop` points at the persistent AppImage file. Launch a
 moved or updated image from its new location before signing in. Keep the app running

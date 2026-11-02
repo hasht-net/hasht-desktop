@@ -309,7 +309,7 @@ app.whenReady().then(() => {
   ipcMain.handle("account:run-security-step-up", async (event, ticket: unknown) => {
     const target = securityManagementUrl(event.sender.id, ticket);
     try { registerAppImageProtocol(); }
-    catch { throw new Error("Could not register Hasht to receive the browser's reply. Check that xdg-utils is installed, then try again."); }
+    catch (error) { throw new Error(`Could not register Hasht to receive the browser's reply. ${(error as Error).message} Then try again.`); }
     const result = waitForStepUp(event.sender.id);
     try { await shell.openExternal(target); }
     catch (err) { cancelStepUp(event.sender.id); throw err; }

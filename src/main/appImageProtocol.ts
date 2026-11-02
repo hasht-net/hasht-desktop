@@ -1,9 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 const DESKTOP_FILE = "net.hasht.app.AppImage.desktop";
+const SCHEME_MIME = "x-scheme-handler/hasht";
 
 // Desktop Exec syntax is not shell syntax. Escape both its quoted argument
 // layer and desktop-entry string layer; literal percent signs are field codes.
@@ -16,26 +17,79 @@ export function appImageDesktopEntry(executable: string): string {
   return [
     "[Desktop Entry]", "Type=Application", "Name=Hasht",
     `Exec=${exec}`, "Terminal=false", "NoDisplay=true",
-    "MimeType=x-scheme-handler/hasht;", "Categories=Network;", "",
+    `MimeType=${SCHEME_MIME};`, "Categories=Network;", "",
   ].join("\n");
+}
+
+/** Sets Hasht as the hasht:// default in a mimeapps.list, keeping every other line. */
+export function withHashtDefault(list: string): string {
+  const lines = list.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  const entry = `${SCHEME_MIME}=${DESKTOP_FILE}`;
+  const out: string[] = [];
+  let inDefaults = false;
+  let written = false;
+  for (const line of lines) {
+    if (/^\s*\[/.test(line)) {
+      inDefaults = line.trim() === "[Default Applications]";
+      out.push(line);
+      if (inDefaults && !written) { out.push(entry); written = true; }
+    } else if (!(inDefaults && line.trim().startsWith(`${SCHEME_MIME}=`))) {
+      out.push(line);
+    }
+  }
+  if (!written) {
+    if (out.length && out.at(-1)!.trim() !== "") out.push("");
+    out.push("[Default Applications]", entry);
+  }
+  return `${out.join("\n")}\n`;
+}
+
+function xdgDir(variable: string, fallback: string): string {
+  const value = process.env[variable];
+  return value && path.isAbsolute(value) ? value : path.join(os.homedir(), fallback);
+}
+
+function missing(error: unknown): boolean {
+  return (error as NodeJS.ErrnoException)?.code === "ENOENT";
 }
 
 /** AppImages do not install their bundled launcher into the user's desktop. */
 export function registerAppImageProtocol(): void {
   if (process.platform !== "linux" || !process.env.APPIMAGE) return;
-  const dataHome = process.env.XDG_DATA_HOME;
-  const applications = path.join(dataHome && path.isAbsolute(dataHome)
-    ? dataHome : path.join(os.homedir(), ".local", "share"), "applications");
+  const applications = path.join(xdgDir("XDG_DATA_HOME", ".local/share"), "applications");
+  const config = xdgDir("XDG_CONFIG_HOME", ".config");
+  const mimeapps = path.join(config, "mimeapps.list");
   const entry = appImageDesktopEntry(process.env.APPIMAGE);
-  mkdirSync(applications, { recursive: true });
-  // Refresh on each launch: APPIMAGE is the persistent file, whereas execPath
-  // points inside a temporary mount. Moving/updating the image repairs this.
-  writeFileSync(path.join(applications, DESKTOP_FILE), entry, { mode: 0o644 });
-  const run = (args: string[]) => execFileSync("xdg-mime", args, {
+  try {
+    mkdirSync(applications, { recursive: true });
+    // Refresh on each launch: APPIMAGE is the persistent file, whereas execPath
+    // points inside a temporary mount. Moving/updating the image repairs this.
+    writeFileSync(path.join(applications, DESKTOP_FILE), entry, { mode: 0o644 });
+    // Written directly, not via xdg-mime: xdg-utils is optional on some
+    // distros and an AppImage cannot install it.
+    let list = "";
+    try { list = readFileSync(mimeapps, "utf8"); }
+    catch (error) { if (!missing(error)) throw error; }
+    mkdirSync(config, { recursive: true });
+    writeFileSync(`${mimeapps}.hasht-tmp`, withHashtDefault(list), { mode: 0o644 });
+    renameSync(`${mimeapps}.hasht-tmp`, mimeapps);
+  } catch (error) {
+    throw new Error(`Your desktop settings could not be updated (${(error as Error).message}).`);
+  }
+  const run = (file: string, args: string[]) => execFileSync(file, args, {
     encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"],
   }).trim();
-  run(["default", DESKTOP_FILE, "x-scheme-handler/hasht"]);
-  if (run(["query", "default", "x-scheme-handler/hasht"]) !== DESKTOP_FILE) {
-    throw new Error("The desktop did not register Hasht's browser callback handler.");
+  try { run("update-desktop-database", [applications]); } catch { /* optional cache */ }
+  let current: string;
+  try { current = run("xdg-mime", ["query", "default", SCHEME_MIME]); }
+  catch (error) {
+    if (missing(error)) return;
+    throw new Error("Your desktop could not confirm Hasht as the hasht:// link handler.");
+  }
+  if (current !== DESKTOP_FILE) {
+    throw new Error(current
+      ? `Your desktop opens hasht:// links with ${current} instead of Hasht. Change it in your default apps settings.`
+      : "Your desktop did not accept Hasht as the hasht:// link handler.");
   }
 }
