@@ -36,7 +36,7 @@ test('registers a persistent launcher with URL forwarding and verifies the assoc
   const app = load(); app.registerAppImageProtocol();
   const write = app.calls.find(c => c[0] === 'write');
   assert.equal(write[1], '/home/test/.local/share/applications/net.hasht.app.AppImage.desktop');
-  assert.match(write[2], /Exec="\/apps\/Hasht.AppImage" %u/);
+  assert.match(write[2], /^Exec=\/apps\/Hasht.AppImage %u$/m);
   assert.match(write[2], /MimeType=x-scheme-handler\/hasht;/);
   assert.equal(app.disk['/home/test/.config/mimeapps.list'],
     '[Default Applications]\nx-scheme-handler/hasht=net.hasht.app.AppImage.desktop\n');
@@ -47,13 +47,29 @@ test('honors absolute XDG_DATA_HOME and XDG_CONFIG_HOME and refreshes a moved im
   app.registerAppImageProtocol();
   const write = app.calls.find(c => c[0] === 'write');
   assert.equal(write[1], '/data/applications/net.hasht.app.AppImage.desktop');
-  assert.match(write[2], /Exec="\/new\/Hasht.AppImage" %u/);
+  assert.match(write[2], /^Exec=\/new\/Hasht.AppImage %u$/m);
   assert.match(app.disk['/cfg/mimeapps.list'], /hasht=net.hasht.app.AppImage.desktop/);
 });
 test('works without xdg-utils or desktop-file-utils installed', () => {
   const app = load(undefined, undefined, { tools: [] });
   app.registerAppImageProtocol();
   assert.match(app.disk['/home/test/.config/mimeapps.list'], /x-scheme-handler\/hasht=net.hasht.app.AppImage.desktop/);
+});
+test('also sets the default in existing desktop-specific lists, which take precedence', () => {
+  const kde = '/home/test/.config/kde-mimeapps.list';
+  const app = load('linux', { APPIMAGE: '/apps/Hasht.AppImage', XDG_CURRENT_DESKTOP: 'zorin:GNOME:KDE' },
+    { files: { [kde]: '[Default Applications]\nx-scheme-handler/hasht=hasht-0.1.1.desktop\n' } });
+  app.registerAppImageProtocol();
+  assert.equal(app.disk[kde], '[Default Applications]\nx-scheme-handler/hasht=net.hasht.app.AppImage.desktop\n');
+  assert.equal(app.disk['/home/test/.config/gnome-mimeapps.list'], undefined);
+  assert.equal(app.disk['/home/test/.config/zorin-mimeapps.list'], undefined);
+});
+test('quotes only paths that need it and skips xdg-mime, which cannot resolve quoted Exec', () => {
+  const app = load('linux', { APPIMAGE: '/home/test/My Apps/Hasht.AppImage' }, { query: 'other.desktop\n' });
+  app.registerAppImageProtocol();
+  assert.match(app.calls.find(c => c[0] === 'write')[2], /^Exec="\/home\/test\/My Apps\/Hasht.AppImage" %u$/m);
+  assert.ok(!app.calls.some(c => c[0] === 'xdg-mime'));
+  assert.equal(app.appImageDesktopEntry('/apps/100%.AppImage').split('\n')[3], 'Exec=/apps/100%%.AppImage %u');
 });
 test('skips other platforms and installed Linux packages', () => {
   for (const app of [load('darwin'), load('linux', {})]) {

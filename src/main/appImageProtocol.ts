@@ -6,14 +6,21 @@ import path from "node:path";
 const DESKTOP_FILE = "net.hasht.app.AppImage.desktop";
 const SCHEME_MIME = "x-scheme-handler/hasht";
 
+// xdg-mime keeps the quotes when resolving Exec, finds no binary, and skips
+// the entry, so quote only paths that need it.
+function execNeedsQuotes(executable: string): boolean {
+  return /[\s"'\\><~|&;$*?#()`]/.test(executable);
+}
+
 // Desktop Exec syntax is not shell syntax. Escape both its quoted argument
 // layer and desktop-entry string layer; literal percent signs are field codes.
 export function appImageDesktopEntry(executable: string): string {
   if (!path.isAbsolute(executable) || /[\x00-\x1f\x7f]/.test(executable)) {
     throw new Error("The AppImage must have an absolute path without control characters.");
   }
-  const quoted = executable.replace(/[\\"`$]/g, "\\$&").replace(/%/g, "%%");
-  const exec = `"${quoted}" %u`.replace(/\\/g, "\\\\");
+  const escaped = execNeedsQuotes(executable)
+    ? `"${executable.replace(/[\\"`$]/g, "\\$&")}"` : executable;
+  const exec = `${escaped.replace(/%/g, "%%")} %u`.replace(/\\/g, "\\\\");
   return [
     "[Desktop Entry]", "Type=Application", "Name=Hasht",
     `Exec=${exec}`, "Terminal=false", "NoDisplay=true",
@@ -59,7 +66,9 @@ export function registerAppImageProtocol(): void {
   if (process.platform !== "linux" || !process.env.APPIMAGE) return;
   const applications = path.join(xdgDir("XDG_DATA_HOME", ".local/share"), "applications");
   const config = xdgDir("XDG_CONFIG_HOME", ".config");
-  const mimeapps = path.join(config, "mimeapps.list");
+  // Desktop-specific lists (kde-, gnome-mimeapps.list) take precedence when present.
+  const desktops = (process.env.XDG_CURRENT_DESKTOP ?? "").split(":").filter(Boolean)
+    .map(name => `${name.toLowerCase()}-mimeapps.list`);
   const entry = appImageDesktopEntry(process.env.APPIMAGE);
   try {
     mkdirSync(applications, { recursive: true });
@@ -68,12 +77,19 @@ export function registerAppImageProtocol(): void {
     writeFileSync(path.join(applications, DESKTOP_FILE), entry, { mode: 0o644 });
     // Written directly, not via xdg-mime: xdg-utils is optional on some
     // distros and an AppImage cannot install it.
-    let list = "";
-    try { list = readFileSync(mimeapps, "utf8"); }
-    catch (error) { if (!missing(error)) throw error; }
     mkdirSync(config, { recursive: true });
-    writeFileSync(`${mimeapps}.hasht-tmp`, withHashtDefault(list), { mode: 0o644 });
-    renameSync(`${mimeapps}.hasht-tmp`, mimeapps);
+    for (const name of [...desktops, "mimeapps.list"]) {
+      const file = path.join(config, name);
+      let list: string;
+      try { list = readFileSync(file, "utf8"); }
+      catch (error) {
+        if (!missing(error)) throw error;
+        if (name !== "mimeapps.list") continue;
+        list = "";
+      }
+      writeFileSync(`${file}.hasht-tmp`, withHashtDefault(list), { mode: 0o644 });
+      renameSync(`${file}.hasht-tmp`, file);
+    }
   } catch (error) {
     throw new Error(`Your desktop settings could not be updated (${(error as Error).message}).`);
   }
@@ -81,6 +97,8 @@ export function registerAppImageProtocol(): void {
     encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"],
   }).trim();
   try { run("update-desktop-database", [applications]); } catch { /* optional cache */ }
+  // xdg-mime cannot resolve a quoted Exec, so its answer would be wrong.
+  if (execNeedsQuotes(process.env.APPIMAGE)) return;
   let current: string;
   try { current = run("xdg-mime", ["query", "default", SCHEME_MIME]); }
   catch (error) {
