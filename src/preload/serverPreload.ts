@@ -1,5 +1,9 @@
 import { contextBridge, ipcRenderer } from "electron";
 
+type SpellingContext = { word: string; suggestions: string[] };
+let spellingListener: ((context: SpellingContext) => void) | null = null;
+ipcRenderer.on("spelling-context", (_event, context: SpellingContext) => spellingListener?.(context));
+
 // Runs inside the untouched app page with contextIsolation on — this is the
 // only bridge between a (possibly untrusted, self-hosted-by-someone-else)
 // server's page and the privileged main process. Keep this list minimal:
@@ -20,6 +24,14 @@ contextBridge.exposeInMainWorld("chatDesktop", {
   // All platforms now, not just macOS: Electron has no browser extensions,
   // so 1Password-style passkeys never show up in the in-page picker.
   needsBrowserSignIn: true,
+  // The composer's context menu lists the right-clicked word's suggestions,
+  // which main reports just after the page's (uncancelled) contextmenu event.
+  nativeSpelling: true,
+  onSpellingContext: (callback: (context: SpellingContext) => void) => {
+    spellingListener = callback;
+  },
+  // Main adds the word it last reported, never one the page names.
+  addToDictionary: () => ipcRenderer.invoke("spelling:learn"),
   // Browser runs the ceremony; page collects the session via takePendingAuth.
   supportsBrowserRegistration: true,
   cancelPasskeySignIn: () => ipcRenderer.invoke("native-auth:cancel"),

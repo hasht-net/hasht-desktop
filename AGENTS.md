@@ -16,6 +16,8 @@ release.
   after a trusted click on the composer's Paste menu item, observed by the
   isolated preload; the answer is stored in `serverStore`. Keep the preload
   selectors in step with the server's `MarkdownComposer` clipboard menu.
+- `src/main/spelling.ts` — sends the right-clicked word's spelling suggestions
+  to the page for that menu; Add to Dictionary only accepts the reported word.
 - `src/main/serverStore.ts` — persisted server list (`electron-store`),
   never credentials — each server keeps its own auth (a bearer token in that
   session partition's localStorage), isolated per partition. The page reports
