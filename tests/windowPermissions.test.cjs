@@ -45,6 +45,7 @@ function permissionHandlers(platform, { dialogResponse = 0 } = {}) {
       };
       if (name === "./tray") return { clearUnread() {} };
       if (name === "./screenShare") return { enableScreenShare() {} };
+      if (name === "./spelling") return { enableSpelling() {} };
       return require(name);
     },
   });

@@ -35,7 +35,7 @@ test('removing one desktop account clears only its partition and revokes the sav
   }
   const windows = moduleWithMocks('windows.js', {
     electron: { BrowserWindow, session: { fromPartition: name => { partitions.push(name); return partition; } } },
-    './serverStore': {}, './tray': {}, './screenShare': {},
+    './serverStore': {}, './tray': {}, './screenShare': {}, './spelling': {},
   });
   await windows.forgetServerAccount({ id: 'selected', url: 'https://chat.test' });
   assert.deepEqual(partitions, ['persist:server-selected']);

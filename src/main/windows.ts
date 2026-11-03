@@ -20,6 +20,7 @@ import {
 } from "./serverStore";
 import { clearUnread } from "./tray";
 import { enableScreenShare } from "./screenShare";
+import { enableSpelling } from "./spelling";
 
 // Height of the draggable strip the page reserves at the top of the window.
 // macOS traffic lights are small and inset (28px fits); Windows caption
@@ -192,6 +193,7 @@ export function openServerWindow(entry: ServerEntry, { show = true } = {}): Brow
 
   // Without this `getDisplayMedia()` is refused before any picker appears.
   enableScreenShare(serverSession);
+  enableSpelling(win.webContents);
 
   win.on("focus", () => {
     if (activatingWindows) return;
