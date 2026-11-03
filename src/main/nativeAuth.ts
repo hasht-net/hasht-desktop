@@ -44,8 +44,8 @@ export async function beginBrowserSignIn(
   options: BrowserSignInOptions = {},
 ): Promise<{ match_code: string }> {
   try { registerAppImageProtocol(); }
-  catch {
-    throw new Error("Could not register Hasht for browser sign-in. Ensure xdg-utils is installed and your desktop settings are writable, then try again, or install the Hasht .deb/.rpm package.");
+  catch (error) {
+    throw new Error(`Could not register Hasht for browser sign-in. ${(error as Error).message} Then try again, or install the Hasht .deb/.rpm package.`);
   }
   options = browserSignInOptions(options);
   const verifier = randomBytes(32).toString("hex");

@@ -24,8 +24,9 @@ release.
 - `src/main/nativeAuth.ts` — browser-handoff passkey sign-in (`/api/auth/native/*`)
   over the `hasht://` deep-link scheme, registered/handled from `main.ts`. Offered on
   all platforms (`needsBrowserSignIn` in `serverPreload.ts`) so browser password
-  managers can supply passkeys. `appImageProtocol.ts` installs and verifies the
-  per-user Linux AppImage callback launcher using the persistent `APPIMAGE` path.
+  managers can supply passkeys. `appImageProtocol.ts` installs the per-user Linux
+  AppImage callback launcher using the persistent `APPIMAGE` path and writes
+  `mimeapps.list` itself; `xdg-mime` only verifies when present.
   Approving in the browser needs a passkey or password step-up; there is no
   code to compare. `native-auth:start` still returns the deprecated
   `match_code` for pages from older servers.
