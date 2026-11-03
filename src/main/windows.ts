@@ -68,7 +68,7 @@ export function serverIdForWebContents(webContentsId: number): string | undefine
 // One BrowserWindow + one isolated session partition per server (matches
 // Mattermost/Rocket.Chat Desktop): a malicious self-hosted server gets its
 // own cookie jar/localStorage, never direct Node/Electron access.
-export function openServerWindow(entry: ServerEntry): BrowserWindow {
+export function openServerWindow(entry: ServerEntry, { show = true } = {}): BrowserWindow {
   const existing = serverWindows.get(entry.id);
   if (existing && !existing.isDestroyed()) {
     if (existing.isMinimized()) existing.restore();
@@ -86,6 +86,7 @@ export function openServerWindow(entry: ServerEntry): BrowserWindow {
     ...bounds,
     minWidth: 720,
     minHeight: 480,
+    show,
     title: entry.name,
     icon: process.platform === "linux"
       ? path.join(__dirname, "../../build/icon.png")

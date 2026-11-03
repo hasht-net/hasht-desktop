@@ -9,6 +9,9 @@ interface TrayCallbacks {
   onCheckForUpdates: () => void;
   readyUpdateVersion: () => string | null;
   onInstallUpdate: () => void;
+  /** null when this build can't register a login item. */
+  openAtLogin: () => boolean | null;
+  onToggleOpenAtLogin: (enabled: boolean) => void;
   onQuit: () => void;
 }
 
@@ -102,6 +105,17 @@ export function refreshTrayMenu(opts: TrayCallbacks): void {
   rebuildMenu(opts);
 }
 
+function openAtLoginItems(opts: TrayCallbacks) {
+  const checked = opts.openAtLogin();
+  if (checked === null) return [];
+  return [{
+    label: "Open at Login",
+    type: "checkbox" as const,
+    checked,
+    click: (item: Electron.MenuItem) => opts.onToggleOpenAtLogin(item.checked),
+  }];
+}
+
 function rebuildMenu(opts: TrayCallbacks): void {
   if (!tray) return;
   const servers: ServerEntry[] = listServers();
@@ -121,6 +135,7 @@ function rebuildMenu(opts: TrayCallbacks): void {
     { type: "separator" as const },
     { label: "Manage Servers…", click: opts.onAddServer },
     { type: "separator" as const },
+    ...openAtLoginItems(opts),
     { label: "Check for Updates…", click: opts.onCheckForUpdates },
     ...(opts.readyUpdateVersion()
       ? [{ label: "Restart to Install Update", click: opts.onInstallUpdate }]

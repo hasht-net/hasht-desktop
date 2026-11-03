@@ -17,6 +17,7 @@ files:
   # Icon Composer design source (Xcode/macOS 26 asset), not something the app
   # needs at runtime — keep it out of every installer.
   - "!build/hasht.icon/**/*"
+  - "!build/installer.nsh"
 
 # Deep-link scheme the browser sign-in handoff calls back on.
 protocols:

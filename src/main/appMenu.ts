@@ -7,6 +7,8 @@ export interface AppMenuCallbacks {
   onCheckForUpdates: () => void;
   readyUpdateVersion: () => string | null;
   onInstallUpdate: () => void;
+  openAtLogin: () => boolean | null;
+  onToggleOpenAtLogin: (enabled: boolean) => void;
   onAbout: () => void;
   onQuit: () => void;
 }
@@ -22,6 +24,14 @@ export function buildAppMenu(callbacks: AppMenuCallbacks): void {
   const updateItems: MenuItemConstructorOptions[] = callbacks.readyUpdateVersion()
     ? [{ label: "Restart to Install Update", click: callbacks.onInstallUpdate }]
     : [];
+
+  const loginChecked = callbacks.openAtLogin();
+  const loginItems: MenuItemConstructorOptions[] = loginChecked === null ? [] : [{
+    label: "Open at Login",
+    type: "checkbox",
+    checked: loginChecked,
+    click: (item) => callbacks.onToggleOpenAtLogin(item.checked),
+  }, { type: "separator" }];
 
   const serverItems: MenuItemConstructorOptions[] = servers.map((s) => ({
     label: s.name,
@@ -42,6 +52,7 @@ export function buildAppMenu(callbacks: AppMenuCallbacks): void {
               },
               ...updateItems,
               { type: "separator" as const },
+              ...loginItems,
               { role: "hide" as const },
               { role: "hideOthers" as const },
               { role: "unhide" as const },

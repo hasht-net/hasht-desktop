@@ -54,6 +54,12 @@ contextBridge.exposeInMainWorld("chatDesktop", {
   getUpdateState: () => ipcRenderer.invoke("update:state"),
   queueUpdate: () => ipcRenderer.invoke("update:queue"),
   installUpdate: () => ipcRenderer.invoke("update:install"),
+  // The page's settings row. Null when this build can't register one.
+  getOpenAtLogin: () => ipcRenderer.invoke("login-item:state"),
+  setOpenAtLogin: (enabled: boolean) => ipcRenderer.invoke("login-item:set", enabled),
+  // The page's one-time offer, remembered by the app across servers.
+  shouldOfferOpenAtLogin: () => ipcRenderer.invoke("login-item:should-offer"),
+  markOpenAtLoginOffered: () => ipcRenderer.invoke("login-item:offered"),
 });
 
 // A notification's onclick calls window.focus(), which in Electron can't show
