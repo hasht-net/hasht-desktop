@@ -38,6 +38,12 @@ release.
   Checks at launch and at most daily after; automatic downloads wait until the user
   is away (idle, plugged in, no audio). Explicit window-bar downloads start immediately. The page's window bar shows the
   state via `getUpdateState` / `queueUpdate` / `installUpdate`.
+- `src/main/loginItem.ts` — "Open at Login" (tray, macOS app menu, picker, and
+  the page's settings and one-time offer via `chatDesktop`; the offer is
+  remembered per device in `serverStore`): Electron login items on
+  macOS/Windows, an XDG autostart entry on Linux.
+  A login launch keeps the server window hidden in the tray.
+  `build/installer.nsh` removes the Windows Run value on uninstall.
 - `src/main/screenShare.ts` — display-media handler (Electron refuses
   `getDisplayMedia` without one), preferring the OS picker; plus the macOS
   screen-recording status/settings the page can't reach itself.

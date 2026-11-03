@@ -12,6 +12,8 @@ const headline = $("headline");
 const tagline = $("tagline");
 const addHeading = $("add-heading");
 const errorEl = $("error");
+const loginToggle = $("login-toggle");
+const openAtLoginInput = $("open-at-login");
 
 const urlInput = $("url");
 const nameInput = $("name");
@@ -196,7 +198,16 @@ async function refresh() {
 
   if (openRow && !servers.some((s) => s.id === openRow)) openRow = null;
   serversEl.replaceChildren(...servers.map(renderServer));
+
+  // Also changeable from the tray, so re-read it with the list.
+  const openAtLogin = await window.picker.openAtLogin();
+  loginToggle.hidden = openAtLogin === null;
+  openAtLoginInput.checked = openAtLogin === true;
 }
+
+openAtLoginInput.onchange = async () => {
+  openAtLoginInput.checked = (await window.picker.setOpenAtLogin(openAtLoginInput.checked)) === true;
+};
 
 // A server window may have reported a sign-in or sign-out since this was drawn.
 window.addEventListener("focus", () => refresh());

@@ -14,16 +14,19 @@ function execNeedsQuotes(executable: string): boolean {
 
 // Desktop Exec syntax is not shell syntax. Escape both its quoted argument
 // layer and desktop-entry string layer; literal percent signs are field codes.
-export function appImageDesktopEntry(executable: string): string {
+export function desktopExec(executable: string, args: string): string {
   if (!path.isAbsolute(executable) || /[\x00-\x1f\x7f]/.test(executable)) {
-    throw new Error("The AppImage must have an absolute path without control characters.");
+    throw new Error("The app must have an absolute path without control characters.");
   }
   const escaped = execNeedsQuotes(executable)
     ? `"${executable.replace(/[\\"`$]/g, "\\$&")}"` : executable;
-  const exec = `${escaped.replace(/%/g, "%%")} %u`.replace(/\\/g, "\\\\");
+  return `${escaped.replace(/%/g, "%%")} ${args}`.replace(/\\/g, "\\\\");
+}
+
+export function appImageDesktopEntry(executable: string): string {
   return [
     "[Desktop Entry]", "Type=Application", "Name=Hasht",
-    `Exec=${exec}`, "Terminal=false", "NoDisplay=true",
+    `Exec=${desktopExec(executable, "%u")}`, "Terminal=false", "NoDisplay=true",
     `MimeType=${SCHEME_MIME};`, "Categories=Network;", "",
   ].join("\n");
 }
@@ -52,7 +55,7 @@ export function withHashtDefault(list: string): string {
   return `${out.join("\n")}\n`;
 }
 
-function xdgDir(variable: string, fallback: string): string {
+export function xdgDir(variable: string, fallback: string): string {
   const value = process.env[variable];
   return value && path.isAbsolute(value) ? value : path.join(os.homedir(), fallback);
 }

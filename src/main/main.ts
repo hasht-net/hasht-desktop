@@ -6,12 +6,14 @@ import path from "node:path";
 import {
   addServer,
   getActiveServer,
+  getOpenAtLoginOffered,
   hasScheme,
   listServers,
   normalizeUrl,
   removeServer,
   renameServer,
   setActiveServer,
+  setOpenAtLoginOffered,
   setServerAccount,
   type ServerEntry,
 } from "./serverStore";
@@ -46,6 +48,14 @@ import {
 import { openScreenCaptureSettings, screenCaptureStatus } from "./screenShare";
 import { getDateTimePreferences } from "./dateTimePreferences";
 import { cancelStepUp, completeStepUp, waitForStepUp } from "./securityStepUp";
+import {
+  canOpenAtLogin,
+  isOpenAtLogin,
+  launchedAtLogin,
+  loginItemNeedsApproval,
+  refreshOpenAtLogin,
+  setOpenAtLogin,
+} from "./loginItem";
 
 // App Sandbox does not support Electron’s single-instance lock.
 if (!process.mas && !app.requestSingleInstanceLock()) {
@@ -191,6 +201,23 @@ function refreshMenus(): void {
   buildAppMenu(appMenuCallbacks);
 }
 
+function toggleOpenAtLogin(enabled: boolean): void {
+  // Any explicit choice answers the page's one-time question too.
+  setOpenAtLoginOffered();
+  try { setOpenAtLogin(enabled); }
+  catch (err) { dialog.showErrorBox("Couldn't change Open at Login", (err as Error).message); }
+  if (enabled && loginItemNeedsApproval()) {
+    void dialog.showMessageBox({
+      type: "info",
+      message: "Allow Hasht to open at login",
+      detail: "Turn on Hasht in System Settings > General > Login Items.",
+    });
+  }
+  refreshMenus();
+}
+
+const openAtLogin = () => (canOpenAtLogin() ? isOpenAtLogin() : null);
+
 const readyUpdateVersion = () => {
   const { state, version } = getUpdateState();
   return state === "ready" ? version : null;
@@ -202,6 +229,8 @@ const trayCallbacks = {
   onCheckForUpdates: () => void checkForUpdatesFromMenu(),
   readyUpdateVersion,
   onInstallUpdate: installUpdate,
+  openAtLogin,
+  onToggleOpenAtLogin: toggleOpenAtLogin,
   onQuit: () => app.quit(),
 };
 
@@ -212,6 +241,8 @@ const appMenuCallbacks = {
   onCheckForUpdates: () => void checkForUpdatesFromMenu(),
   readyUpdateVersion,
   onInstallUpdate: installUpdate,
+  openAtLogin,
+  onToggleOpenAtLogin: toggleOpenAtLogin,
   onQuit: () => app.quit(),
 };
 
@@ -221,6 +252,7 @@ app.whenReady().then(() => {
   initTray(trayCallbacks);
   buildAppMenu(appMenuCallbacks);
   initAutoUpdater(refreshMenus);
+  refreshOpenAtLogin();
 
   ipcMain.handle("date-time:preferences", (event) => {
     if (!serverIdForWebContents(event.sender.id) || event.senderFrame !== event.sender.mainFrame) {
@@ -229,9 +261,10 @@ app.whenReady().then(() => {
     return getDateTimePreferences();
   });
 
+  // A login launch stays in the tray; the window still connects for notifications.
   const active = getActiveServer();
   if (active) {
-    openServerWindow(active);
+    openServerWindow(active, { show: !launchedAtLogin() });
   } else {
     openPickerWindow();
   }
@@ -241,6 +274,11 @@ app.whenReady().then(() => {
   if (startupLink) void handleDeepLink(startupLink);
 
   ipcMain.handle("picker:list-servers", () => listServers());
+  ipcMain.handle("picker:open-at-login", () => openAtLogin());
+  ipcMain.handle("picker:set-open-at-login", (_e, enabled: unknown) => {
+    if (typeof enabled === "boolean" && canOpenAtLogin()) toggleOpenAtLogin(enabled);
+    return openAtLogin();
+  });
 
   ipcMain.handle(
     "picker:add-server",
@@ -364,6 +402,21 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("update:install", (event) => {
     if (serverIdForWebContents(event.sender.id)) installUpdate();
+  });
+
+  // Only Hasht itself can be added, so a server page can do no more than the tray.
+  const fromServerPage = (event: Electron.IpcMainInvokeEvent) =>
+    !!serverIdForWebContents(event.sender.id) && event.senderFrame === event.sender.mainFrame;
+  ipcMain.handle("login-item:state", (event) => (fromServerPage(event) ? openAtLogin() : null));
+  ipcMain.handle("login-item:should-offer", (event) =>
+    fromServerPage(event) && canOpenAtLogin() && !getOpenAtLoginOffered() && !isOpenAtLogin());
+  ipcMain.handle("login-item:offered", (event) => {
+    if (fromServerPage(event)) setOpenAtLoginOffered();
+  });
+  ipcMain.handle("login-item:set", (event, enabled: unknown) => {
+    if (!fromServerPage(event)) return null;
+    if (typeof enabled === "boolean" && canOpenAtLogin()) toggleOpenAtLogin(enabled);
+    return openAtLogin();
   });
 
   // Screen recording is granted to the app by the OS, not to the page, so the

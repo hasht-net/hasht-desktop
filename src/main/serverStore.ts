@@ -23,6 +23,8 @@ interface StoreShape {
   servers: ServerEntry[];
   activeServerId: string | null;
   windowBounds: Record<string, WindowBounds>;
+  /** Pages ask about Open at Login once per device, not once per server. */
+  openAtLoginOffered: boolean;
 }
 
 // electron-store persists to userData/config.json — separate from the app's
@@ -30,7 +32,7 @@ interface StoreShape {
 // partition (see windows.ts). This only holds "which servers has the user
 // added" — never credentials; auth stays in the per-server session cookie.
 const store = new Store<StoreShape>({
-  defaults: { servers: [], activeServerId: null, windowBounds: {} },
+  defaults: { servers: [], activeServerId: null, windowBounds: {}, openAtLoginOffered: false },
 });
 
 export function getWindowBounds(id: string): WindowBounds | undefined {
@@ -39,6 +41,14 @@ export function getWindowBounds(id: string): WindowBounds | undefined {
 
 export function setWindowBounds(id: string, bounds: WindowBounds): void {
   store.set("windowBounds", { ...store.get("windowBounds"), [id]: bounds });
+}
+
+export function getOpenAtLoginOffered(): boolean {
+  return store.get("openAtLoginOffered");
+}
+
+export function setOpenAtLoginOffered(): void {
+  store.set("openAtLoginOffered", true);
 }
 
 export function listServers(): ServerEntry[] {
