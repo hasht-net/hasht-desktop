@@ -54,7 +54,8 @@ release.
   `document.title`'s existing `(N) Title` format (see `hasht-chat` repo's
   `frontend/src/App.vue`) — no frontend changes needed. Also wraps the page's
   `Notification` so a real click raises the window, which the page's own
-  `window.focus()` can't do once it's hidden. Keep this bridge
+  `window.focus()` can't do once it's hidden. It also replaces same-tag
+  notifications itself; Electron drops a same-tag replacement's click. Keep this bridge
   minimal; it's the only thing standing between an untrusted self-hosted
   server and the main process.
 - `src/preload/pickerPreload.ts` + `src/renderer-picker/` — the welcome /

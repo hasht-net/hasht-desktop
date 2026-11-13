@@ -79,13 +79,25 @@ contextBridge.exposeInMainWorld("chatDesktop", {
 // message in a window the user couldn't see. Wrap the page's Notification so a
 // real click also asks main to raise this window; isTrusted keeps the page
 // from raising itself with a synthetic click event.
+// Electron also delivers a replaced notification's close to its same-tag
+// replacement, which then never receives a click. The page tags per channel,
+// so only a channel's first banner opened it. Replace by tag here instead.
 contextBridge.executeInMainWorld({
   func: (raise: () => void) => {
     const Native = window.Notification;
     if (typeof Native !== "function") return;
+    const byTag = new Map<string, Notification>();
     window.Notification = class extends Native {
       constructor(title: string, options?: NotificationOptions) {
-        super(title, options);
+        const tag = options?.tag;
+        if (tag) byTag.get(tag)?.close();
+        super(title, tag ? { ...options, tag: undefined } : options);
+        if (tag) {
+          byTag.set(tag, this);
+          this.addEventListener("close", () => {
+            if (byTag.get(tag) === this) byTag.delete(tag);
+          });
+        }
         this.addEventListener("click", (event) => {
           if (event.isTrusted) raise();
         });
