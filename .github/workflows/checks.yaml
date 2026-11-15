@@ -16,4 +16,5 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: node --test tests/updater.cjs
+      - run: node --experimental-strip-types --test tests/*.cjs tests/*.test.ts
+      - run: xvfb-run -a npx electron tests/electron/store.cjs
