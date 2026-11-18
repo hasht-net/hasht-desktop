@@ -46,13 +46,14 @@ export function titleBarOverlayOptions(theme: "dark" | "light" = "dark") {
 // Consume that signal when handling the first clipboard permission request.
 const PASTE_GESTURE_WINDOW_MS = 1000;
 
-// Reply to every synchronous signal, including signals from unregistered popup
-// windows that inherit the preload, so those renderers cannot hang.
-const clipboardGestureHandlers = new Map<number, (event: Electron.IpcMainEvent) => void>();
+// Every window showing a server's page, keyed by its webContents id. They all
+// share the server's session, so permission and clipboard checks accept any.
+type ServerPage = { entry: ServerEntry; win: BrowserWindow; pasteGestureAt: number | null };
+const serverPages = new Map<number, ServerPage>();
+const clipboardPrompts = new Map<string, Promise<boolean>>();
 let clipboardGestureListenerInstalled = false;
 
 const serverWindows = new Map<string, BrowserWindow>();
-const serverIdByWebContentsId = new Map<number, string>();
 let pickerWindow: BrowserWindow | null = null;
 let isQuitting = false;
 const focusedServerIds = new Set<string>();
@@ -63,7 +64,7 @@ export function setQuitting(value: boolean): void {
 }
 
 export function serverIdForWebContents(webContentsId: number): string | undefined {
-  return serverIdByWebContentsId.get(webContentsId);
+  return serverPages.get(webContentsId)?.entry.id;
 }
 
 // One BrowserWindow + one isolated session partition per server (matches
@@ -78,17 +79,68 @@ export function openServerWindow(entry: ServerEntry, { show = true } = {}): Brow
     return existing;
   }
 
-  const partition = `persist:server-${entry.id}`;
+  const win = openServerPageWindow(
+    entry,
+    {
+      width: 1280,
+      height: 800,
+      ...restorableBounds(entry.id),
+      minWidth: 720,
+      minHeight: 480,
+      show,
+      title: entry.name,
+    },
+    // A hidden window is still the live connection to the server; letting
+    // Chromium throttle its timers delays notifications and reconnects.
+    { backgroundThrottling: false },
+  );
+
+  win.on("focus", () => {
+    if (activatingWindows) return;
+    focusedServerIds.delete(entry.id);
+    focusedServerIds.add(entry.id);
+    setActiveServer(entry.id);
+  });
+
+  win.loadURL(entry.url);
+
+  // Electron has no Push API, so the renderer is the only live connection —
+  // closing it would kill unread counts and notifications. Hide instead.
+  win.on("close", (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      win.hide();
+    }
+  });
+
+  win.on("closed", () => {
+    clearUnread(entry.id);
+    serverWindows.delete(entry.id);
+    focusedServerIds.delete(entry.id);
+  });
+
+  // 'resized'/'moved' fire once the user lets go, not on every intermediate
+  // frame of the drag — persisting on `closed` would miss the final state
+  // when the app quits via Cmd+Q instead of a window close.
+  const persistBounds = () => setWindowBounds(entry.id, win.getBounds());
+  win.on("resized", persistBounds);
+  win.on("moved", persistBounds);
+
+  serverWindows.set(entry.id, win);
+  return win;
+}
+
+// A window showing one of the server's own pages, with that server's session
+// and the guards every such window needs. The caller loads the URL.
+function openServerPageWindow(
+  entry: ServerEntry,
+  options: Electron.BrowserWindowConstructorOptions,
+  webPreferences: Electron.WebPreferences = {},
+): BrowserWindow {
   const isMac = process.platform === "darwin";
-  const bounds = restorableBounds(entry.id);
+  const serverSession = session.fromPartition(`persist:server-${entry.id}`);
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    ...bounds,
-    minWidth: 720,
-    minHeight: 480,
-    show,
-    title: entry.name,
+    ...options,
     icon: process.platform === "linux"
       ? path.join(__dirname, "../../build/icon.png")
       : undefined,
@@ -106,7 +158,8 @@ export function openServerWindow(entry: ServerEntry, { show = true } = {}): Brow
     // Painted before the page loads, so a cold start doesn't flash white.
     backgroundColor: "#131417",
     webPreferences: {
-      session: session.fromPartition(partition),
+      ...webPreferences,
+      session: serverSession,
       preload: path.join(__dirname, "../preload/serverPreload.js"),
       contextIsolation: true,
       sandbox: true,
@@ -118,9 +171,6 @@ export function openServerWindow(entry: ServerEntry, { show = true } = {}): Brow
         `--titlebar-height=${TITLEBAR_HEIGHT}`,
         `--app-version=${app.getVersion()}`,
       ],
-      // A hidden window is still the live connection to the server; letting
-      // Chromium throttle its timers delays notifications and reconnects.
-      backgroundThrottling: false,
     },
   });
 
@@ -128,10 +178,11 @@ export function openServerWindow(entry: ServerEntry, { show = true } = {}): Brow
   // an untrusted server would get mic/cam/geolocation for free. Allow voice,
   // notifications, video fullscreen and clipboard writes only from the
   // server's own origin. Clipboard reads ask the user (askClipboardRead).
-  const serverSession = session.fromPartition(partition);
+  // These handlers are per session and capture no window, so each window of
+  // the server can reinstall them.
   serverSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     if (permission === "clipboard-read") {
-      void askClipboardRead(contents, details.requestingUrl).then(callback);
+      void askClipboardRead(entry, contents, details.requestingUrl).then(callback);
       return;
     }
     callback(isPermitted(permission, details.requestingUrl, entry.url));
@@ -146,63 +197,26 @@ export function openServerWindow(entry: ServerEntry, { show = true } = {}): Brow
       : isPermitted(permission, requestingOrigin, entry.url),
   );
 
+  // Without this `getDisplayMedia()` is refused before any picker appears.
+  enableScreenShare(serverSession);
+
   // No page API exposes this channel. The preload sends synchronously so the
   // signal arrives before the page's click handler requests clipboard access.
-  let pasteGestureAt: number | null = null;
+  // Every sender gets a reply, including unregistered popup windows that
+  // inherit the preload, so those renderers cannot hang.
   if (!clipboardGestureListenerInstalled) {
     ipcMain.on("clipboard-paste-gesture", (event) => {
       event.returnValue = false;
-      clipboardGestureHandlers.get(event.sender.id)?.(event);
+      const page = serverPages.get(event.sender.id);
+      if (!page || event.senderFrame !== page.win.webContents.mainFrame) return;
+      if (!isSameOrigin(event.senderFrame.url, page.entry.url)) return;
+      page.pasteGestureAt = Date.now();
+      event.returnValue = true;
     });
     clipboardGestureListenerInstalled = true;
   }
-  clipboardGestureHandlers.set(win.webContents.id, (event) => {
-    if (event.senderFrame !== win.webContents.mainFrame) return;
-    if (!isSameOrigin(event.senderFrame.url, entry.url)) return;
-    pasteGestureAt = Date.now();
-    event.returnValue = true;
-  });
-  let clipboardPrompt: Promise<boolean> | null = null;
-  async function askClipboardRead(contents: Electron.WebContents, requestingUrl: string): Promise<boolean> {
-    if (!isSameOrigin(requestingUrl, entry.url)) return false;
-    if (contents !== win.webContents) return false;
-    const answer = getClipboardRead(entry.id);
-    if (answer) return answer === "granted";
-    if (clipboardPrompt) return clipboardPrompt;
-    const gestureAt = pasteGestureAt;
-    pasteGestureAt = null;
-    if (gestureAt === null || Date.now() - gestureAt > PASTE_GESTURE_WINDOW_MS) return false;
-    clipboardPrompt ??= dialog
-      .showMessageBox(win, {
-        type: "question",
-        buttons: ["Allow", "Don't Allow"],
-        defaultId: 0,
-        cancelId: 1,
-        message: `Allow ${new URL(entry.url).host} to read your clipboard?`,
-        detail: "This lets Paste in the message box work. You won't be asked again for this server.",
-      })
-      .then(({ response }) => {
-        setClipboardRead(entry.id, response === 0 ? "granted" : "denied");
-        return response === 0;
-      })
-      .finally(() => {
-        clipboardPrompt = null;
-      });
-    return clipboardPrompt;
-  }
 
-  // Without this `getDisplayMedia()` is refused before any picker appears.
-  enableScreenShare(serverSession);
   enableSpelling(win.webContents);
-
-  win.on("focus", () => {
-    if (activatingWindows) return;
-    focusedServerIds.delete(entry.id);
-    focusedServerIds.add(entry.id);
-    setActiveServer(entry.id);
-  });
-
-  win.loadURL(entry.url);
 
   // Everything on the server's own origin stays in-window; anything else
   // (e.g. a link-preview target, an external link in a message) opens in
@@ -222,37 +236,45 @@ export function openServerWindow(entry: ServerEntry, { show = true } = {}): Brow
     openExternal(url);
   });
 
-  // Electron has no Push API, so the renderer is the only live connection —
-  // closing it would kill unread counts and notifications. Hide instead.
-  win.on("close", (event) => {
-    if (!isQuitting) {
-      event.preventDefault();
-      win.hide();
-    }
-  });
-
   // Captured up front: `closed` fires after the native object is gone, so
   // reaching for win.webContents there throws "Object has been destroyed".
   const webContentsId = win.webContents.id;
-
-  win.on("closed", () => {
-    clearUnread(entry.id);
-    serverWindows.delete(entry.id);
-    focusedServerIds.delete(entry.id);
-    serverIdByWebContentsId.delete(webContentsId);
-    clipboardGestureHandlers.delete(webContentsId);
-  });
-
-  // 'resized'/'moved' fire once the user lets go, not on every intermediate
-  // frame of the drag — persisting on `closed` would miss the final state
-  // when the app quits via Cmd+Q instead of a window close.
-  const persistBounds = () => setWindowBounds(entry.id, win.getBounds());
-  win.on("resized", persistBounds);
-  win.on("moved", persistBounds);
-
-  serverWindows.set(entry.id, win);
-  serverIdByWebContentsId.set(webContentsId, entry.id);
+  serverPages.set(webContentsId, { entry, win, pasteGestureAt: null });
+  win.on("closed", () => serverPages.delete(webContentsId));
   return win;
+}
+
+async function askClipboardRead(
+  entry: ServerEntry,
+  contents: Electron.WebContents,
+  requestingUrl: string,
+): Promise<boolean> {
+  if (!isSameOrigin(requestingUrl, entry.url)) return false;
+  const page = serverPages.get(contents.id);
+  if (page?.entry.id !== entry.id) return false;
+  const answer = getClipboardRead(entry.id);
+  if (answer) return answer === "granted";
+  const pending = clipboardPrompts.get(entry.id);
+  if (pending) return pending;
+  const gestureAt = page.pasteGestureAt;
+  page.pasteGestureAt = null;
+  if (gestureAt === null || Date.now() - gestureAt > PASTE_GESTURE_WINDOW_MS) return false;
+  const prompt = dialog
+    .showMessageBox(page.win, {
+      type: "question",
+      buttons: ["Allow", "Don't Allow"],
+      defaultId: 0,
+      cancelId: 1,
+      message: `Allow ${new URL(entry.url).host} to read your clipboard?`,
+      detail: "This lets Paste in the message box work. You won't be asked again for this server.",
+    })
+    .then(({ response }) => {
+      setClipboardRead(entry.id, response === 0 ? "granted" : "denied");
+      return response === 0;
+    })
+    .finally(() => clipboardPrompts.delete(entry.id));
+  clipboardPrompts.set(entry.id, prompt);
+  return prompt;
 }
 
 // Closing hides a server window. App activation must prefer windows still
