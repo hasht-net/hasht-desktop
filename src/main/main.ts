@@ -24,7 +24,9 @@ import {
   openPickerWindow,
   closePickerWindow,
   forgetServerAccount,
+  openThreadWindow,
   serverIdForWebContents,
+  serverWindowIdForWebContents,
   setQuitting,
   TITLEBAR_HEIGHT,
 } from "./windows";
@@ -407,6 +409,12 @@ app.whenReady().then(() => {
   // Only Hasht itself can be added, so a server page can do no more than the tray.
   const fromServerPage = (event: Electron.IpcMainInvokeEvent) =>
     !!serverIdForWebContents(event.sender.id) && event.senderFrame === event.sender.mainFrame;
+  ipcMain.handle("thread-window:open", (event, path: unknown) => {
+    const entry = listServers().find((s) => s.id === serverIdForWebContents(event.sender.id));
+    if (!entry || !fromServerPage(event) || typeof path !== "string") return false;
+    if (new URL(event.senderFrame!.url).origin !== new URL(entry.url).origin) return false;
+    return openThreadWindow(entry, path);
+  });
   ipcMain.handle("login-item:state", (event) => (fromServerPage(event) ? openAtLogin() : null));
   ipcMain.handle("login-item:should-offer", (event) =>
     fromServerPage(event) && canOpenAtLogin() && !getOpenAtLoginOffered() && !isOpenAtLogin());
@@ -437,7 +445,7 @@ app.whenReady().then(() => {
   // A page notification was clicked (see serverPreload.ts). The page then
   // navigates to the message itself, but can't show a hidden window.
   ipcMain.on("notification-clicked", (event) => {
-    if (!serverIdForWebContents(event.sender.id)) return;
+    if (!serverWindowIdForWebContents(event.sender.id)) return;
     const win = BrowserWindow.fromWebContents(event.sender);
     if (!win || win.isDestroyed()) return;
     if (win.isMinimized()) win.restore();
@@ -464,7 +472,7 @@ app.whenReady().then(() => {
   });
 
   ipcMain.on("unread-count-changed", (event, count: number) => {
-    const serverId = serverIdForWebContents(event.sender.id);
+    const serverId = serverWindowIdForWebContents(event.sender.id);
     if (serverId) {
       setUnreadCount(serverId, count);
       refreshTrayMenu(trayCallbacks);

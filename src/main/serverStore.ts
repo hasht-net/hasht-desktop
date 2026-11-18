@@ -35,6 +35,10 @@ const store = new Store<StoreShape>({
   defaults: { servers: [], activeServerId: null, windowBounds: {}, openAtLoginOffered: false },
 });
 
+export function threadWindowBoundsId(serverId: string): string {
+  return `${serverId}/thread`;
+}
+
 export function getWindowBounds(id: string): WindowBounds | undefined {
   return store.get("windowBounds")[id];
 }
@@ -80,7 +84,7 @@ export function removeServer(id: string): void {
   if (store.get("activeServerId") === id) {
     store.set("activeServerId", servers[0]?.id ?? null);
   }
-  const { [id]: _removed, ...bounds } = store.get("windowBounds");
+  const { [id]: _removed, [threadWindowBoundsId(id)]: _thread, ...bounds } = store.get("windowBounds");
   store.set("windowBounds", bounds);
 }
 

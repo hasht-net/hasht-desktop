@@ -17,6 +17,7 @@ import {
   setActiveServer,
   setClipboardRead,
   setWindowBounds,
+  threadWindowBoundsId,
 } from "./serverStore";
 import { clearUnread } from "./tray";
 import { enableScreenShare } from "./screenShare";
@@ -48,12 +49,18 @@ const PASTE_GESTURE_WINDOW_MS = 1000;
 
 // Every window showing a server's page, keyed by its webContents id. They all
 // share the server's session, so permission and clipboard checks accept any.
-type ServerPage = { entry: ServerEntry; win: BrowserWindow; pasteGestureAt: number | null };
+// Thread windows are pop-outs: they aren't the server's notification or
+// unread connection, and closing one really closes it.
+type WindowRole = "server" | "thread";
+type ServerPage = { entry: ServerEntry; win: BrowserWindow; role: WindowRole; pasteGestureAt: number | null };
 const serverPages = new Map<number, ServerPage>();
 const clipboardPrompts = new Map<string, Promise<boolean>>();
 let clipboardGestureListenerInstalled = false;
 
 const serverWindows = new Map<string, BrowserWindow>();
+// Keyed by `${serverId} ${path}`, so popping out a thread again focuses it.
+const threadWindows = new Map<string, BrowserWindow>();
+const THREAD_PATH = /^\/threads\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 let pickerWindow: BrowserWindow | null = null;
 let isQuitting = false;
 const focusedServerIds = new Set<string>();
@@ -65,6 +72,12 @@ export function setQuitting(value: boolean): void {
 
 export function serverIdForWebContents(webContentsId: number): string | undefined {
   return serverPages.get(webContentsId)?.entry.id;
+}
+
+/** Only the server's main window, for unread counts and notification clicks. */
+export function serverWindowIdForWebContents(webContentsId: number): string | undefined {
+  const page = serverPages.get(webContentsId);
+  return page?.role === "server" ? page.entry.id : undefined;
 }
 
 // One BrowserWindow + one isolated session partition per server (matches
@@ -93,6 +106,7 @@ export function openServerWindow(entry: ServerEntry, { show = true } = {}): Brow
     // A hidden window is still the live connection to the server; letting
     // Chromium throttle its timers delays notifications and reconnects.
     { backgroundThrottling: false },
+    "server",
   );
 
   win.on("focus", () => {
@@ -130,12 +144,50 @@ export function openServerWindow(entry: ServerEntry, { show = true } = {}): Brow
   return win;
 }
 
+/** `path` comes from an untrusted page, so only a thread path on the server's own origin opens. */
+export function openThreadWindow(entry: ServerEntry, path: string): boolean {
+  if (!THREAD_PATH.test(path)) return false;
+  const key = `${entry.id} ${path}`;
+  const existing = threadWindows.get(key);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return true;
+  }
+
+  const boundsId = threadWindowBoundsId(entry.id);
+  const win = openServerPageWindow(
+    entry,
+    {
+      width: 480,
+      height: 720,
+      ...restorableBounds(boundsId),
+      minWidth: 360,
+      minHeight: 480,
+      title: entry.name,
+    },
+    {},
+    "thread",
+  );
+  win.loadURL(new URL(path, entry.url).toString());
+
+  // One shared size and position for every thread window of the server.
+  const persistBounds = () => setWindowBounds(boundsId, win.getBounds());
+  win.on("resized", persistBounds);
+  win.on("moved", persistBounds);
+  win.on("closed", () => threadWindows.delete(key));
+  threadWindows.set(key, win);
+  return true;
+}
+
 // A window showing one of the server's own pages, with that server's session
 // and the guards every such window needs. The caller loads the URL.
 function openServerPageWindow(
   entry: ServerEntry,
   options: Electron.BrowserWindowConstructorOptions,
-  webPreferences: Electron.WebPreferences = {},
+  webPreferences: Electron.WebPreferences,
+  role: WindowRole,
 ): BrowserWindow {
   const isMac = process.platform === "darwin";
   const serverSession = session.fromPartition(`persist:server-${entry.id}`);
@@ -239,7 +291,7 @@ function openServerPageWindow(
   // Captured up front: `closed` fires after the native object is gone, so
   // reaching for win.webContents there throws "Object has been destroyed".
   const webContentsId = win.webContents.id;
-  serverPages.set(webContentsId, { entry, win, pasteGestureAt: null });
+  serverPages.set(webContentsId, { entry, win, role, pasteGestureAt: null });
   win.on("closed", () => serverPages.delete(webContentsId));
   return win;
 }
@@ -318,6 +370,9 @@ export function closeServerWindow(id: string): void {
   // need destroy().
   const win = serverWindows.get(id);
   if (win && !win.isDestroyed()) win.destroy();
+  for (const page of [...serverPages.values()]) {
+    if (page.entry.id === id && !page.win.isDestroyed()) page.win.destroy();
+  }
 }
 
 export function getServerWindow(id: string): BrowserWindow | undefined {
@@ -326,6 +381,11 @@ export function getServerWindow(id: string): BrowserWindow | undefined {
 
 export function getAllServerWindows(): BrowserWindow[] {
   return [...serverWindows.values()];
+}
+
+/** Server windows and their thread windows. */
+export function getAllServerPageWindows(): BrowserWindow[] {
+  return [...serverPages.values()].map((page) => page.win);
 }
 
 export function openPickerWindow(): BrowserWindow {

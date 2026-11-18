@@ -12,6 +12,9 @@ release.
 - `src/main/windows.ts` — one `BrowserWindow` + isolated session partition
   (`persist:server-<id>`) per configured server; sandboxed preload; external
   links open in the OS browser, not a new app window.
+  Thread pop-outs (`openThreadWindow`, `/threads/<uuid>` only) are extra
+  windows on the server's session; they don't report unread counts or raise on
+  notification clicks, and closing one really closes it.
   Clipboard reads (composer Paste) prompt once per server, and only right
   after a trusted click on the composer's Paste menu item, observed by the
   isolated preload; the answer is stored in `serverStore`. Keep the preload

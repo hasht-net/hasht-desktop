@@ -72,6 +72,8 @@ contextBridge.exposeInMainWorld("chatDesktop", {
   // The page's one-time offer, remembered by the app across servers.
   shouldOfferOpenAtLogin: () => ipcRenderer.invoke("login-item:should-offer"),
   markOpenAtLoginOffered: () => ipcRenderer.invoke("login-item:offered"),
+  // The thread panel's pop-out. Main accepts only a `/threads/<id>` path.
+  openThreadWindow: (path: string) => ipcRenderer.invoke("thread-window:open", path),
 });
 
 // A notification's onclick calls window.focus(), which in Electron can't show

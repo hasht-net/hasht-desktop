@@ -1,7 +1,7 @@
 import { app, dialog, net, powerMonitor } from "electron";
 import Store from "electron-store";
 import { autoUpdater } from "electron-updater";
-import { getAllServerWindows, setQuitting } from "./windows";
+import { getAllServerPageWindows, getAllServerWindows, setQuitting } from "./windows";
 
 export type UpdateState = "none" | "available" | "queued" | "downloading" | "ready";
 
@@ -202,7 +202,7 @@ async function tick(): Promise<void> {
 function isAway(): boolean {
   if (!net.isOnline() || powerMonitor.isOnBatteryPower()) return false;
   if (powerMonitor.getSystemIdleState(IDLE_SECONDS) === "active") return false;
-  return !getAllServerWindows().some((win) => !win.isDestroyed() && win.webContents.isCurrentlyAudible());
+  return !getAllServerPageWindows().some((win) => !win.isDestroyed() && win.webContents.isCurrentlyAudible());
 }
 
 async function check(): Promise<void> {

@@ -54,6 +54,7 @@ function load({
       if (name === './windows') return {
         setQuitting: value => calls.push(`quitting:${value}`),
         getAllServerWindows: () => [win],
+        getAllServerPageWindows: () => [win],
       };
       throw Error(`Unexpected dependency ${name}`);
     },
