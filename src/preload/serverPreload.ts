@@ -74,6 +74,8 @@ contextBridge.exposeInMainWorld("chatDesktop", {
   markOpenAtLoginOffered: () => ipcRenderer.invoke("login-item:offered"),
   // The thread panel's pop-out. Main accepts only a `/threads/<id>` path.
   openThreadWindow: (path: string) => ipcRenderer.invoke("thread-window:open", path),
+  // A pop-out raising its server window after handing it a navigation.
+  showMainWindow: () => ipcRenderer.invoke("thread-window:show-main"),
 });
 
 // A notification's onclick calls window.focus(), which in Electron can't show

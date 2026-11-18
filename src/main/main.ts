@@ -28,6 +28,7 @@ import {
   serverIdForWebContents,
   serverWindowIdForWebContents,
   setQuitting,
+  showServerWindowForThread,
   TITLEBAR_HEIGHT,
 } from "./windows";
 import { clearUnread, initTray, refreshTrayMenu, setUnreadCount } from "./tray";
@@ -414,6 +415,12 @@ app.whenReady().then(() => {
     if (!entry || !fromServerPage(event) || typeof path !== "string") return false;
     if (new URL(event.senderFrame!.url).origin !== new URL(entry.url).origin) return false;
     return openThreadWindow(entry, path);
+  });
+  ipcMain.handle("thread-window:show-main", (event) => {
+    const entry = listServers().find((s) => s.id === serverIdForWebContents(event.sender.id));
+    if (!entry || !fromServerPage(event)) return false;
+    if (new URL(event.senderFrame!.url).origin !== new URL(entry.url).origin) return false;
+    return showServerWindowForThread(event.sender.id);
   });
   ipcMain.handle("login-item:state", (event) => (fromServerPage(event) ? openAtLogin() : null));
   ipcMain.handle("login-item:should-offer", (event) =>

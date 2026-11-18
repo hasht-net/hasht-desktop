@@ -181,6 +181,14 @@ export function openThreadWindow(entry: ServerEntry, path: string): boolean {
   return true;
 }
 
+/** A thread window hands navigation to its server window and raises it. */
+export function showServerWindowForThread(webContentsId: number): boolean {
+  const page = serverPages.get(webContentsId);
+  if (page?.role !== "thread") return false;
+  openServerWindow(page.entry);
+  return true;
+}
+
 // A window showing one of the server's own pages, with that server's session
 // and the guards every such window needs. The caller loads the URL.
 function openServerPageWindow(

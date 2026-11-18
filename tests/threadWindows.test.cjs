@@ -153,3 +153,15 @@ test("removing the server closes its thread windows", () => {
   assert.equal(windows[1].destroyed, true);
   assert.equal(exports.getAllServerPageWindows().length, 0);
 });
+
+test("only a thread window can raise its server window", () => {
+  const { exports, entry, server, windows } = harness();
+  exports.openThreadWindow(entry, `/threads/${ROOT}`);
+  const before = server.focused;
+  assert.equal(exports.showServerWindowForThread(server.webContents.id), false);
+  assert.equal(exports.showServerWindowForThread(999), false);
+  assert.equal(server.focused, before);
+  assert.equal(exports.showServerWindowForThread(windows[1].webContents.id), true);
+  assert.equal(server.focused, before + 1);
+  assert.equal(windows.length, 2);
+});
